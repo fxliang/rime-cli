@@ -134,6 +134,7 @@ mod git {
 
         let mut fo = FetchOptions::new();
         fo.remote_callbacks(cb);
+        fo.depth(1);
         let mut repo = RepoBuilder::new();
         repo.fetch_options(fo).with_checkout(co);
         if let Some(branch) = branch {
