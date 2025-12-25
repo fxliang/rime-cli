@@ -37,6 +37,8 @@ jobs:
             echo "LIBRIME_LIB_DIR=$GITHUB_WORKSPACE/librime/dist/lib"         >> $GITHUB_ENV
             ls -l librime/dist/include
             ls -l librime/dist/lib
+            # set RUSTFLAGS="-C link-arg=-Wl,-rpath,@executable_path"
+            echo "RUSTFLAGS=-C link-arg=-Wl,-rpath,@executable_path" >> $GITHUB_ENV
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
             curl -L https://github.com/rime/librime/releases/download/1.15.0/rime-75bc43a-Windows-msvc-x64.7z -o librime.7z
             7z x librime.7z -olibrime
