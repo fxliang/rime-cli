@@ -16,41 +16,37 @@ pub struct 下載參數 {
 }
 
 impl 下載參數 {
-    pub fn 設置代理(&self) {
-        if let Some(proxy) = &self.proxy {
-            log::debug!("設置代理 {}", proxy);
-            std::env::set_var("http_proxy", proxy);
-            std::env::set_var("https_proxy", proxy);
-        }
+    pub fn 代理地址(&self) -> Option<&str> {
+        self.proxy.as_deref()
     }
 }
 
 pub fn 下載配方包(衆配方: &[配方名片], 參數: 下載參數) -> anyhow::Result<()> {
-    參數.設置代理();
+    let 代理 = 參數.代理地址();
     for (包名, 一組配方包) in 配方包::按倉庫分組(衆配方, 參數.host.as_deref()) {
         let 包 = 一組配方包.first().ok_or(anyhow!("至少應有一個配方包"))?;
         log::debug!("下載配方包: {}, 位於 {}", 包名, 包.倉庫地址());
         let 本地倉庫 = 包.本地路徑();
         if 本地倉庫.exists() {
-            同步既存倉庫(包, &本地倉庫)?;
+            同步既存倉庫(包, &本地倉庫, 代理)?;
         } else {
-            搬運倉庫(包, &本地倉庫)?;
+            搬運倉庫(包, &本地倉庫, 代理)?;
         }
     }
     Ok(())
 }
 
-fn 搬運倉庫(包: &配方包, 本地路徑: &Path) -> anyhow::Result<()> {
+fn 搬運倉庫(包: &配方包, 本地路徑: &Path, 代理: Option<&str>) -> anyhow::Result<()> {
     let 網址 = &包.倉庫地址();
     let 分支 = 包.倉庫分支();
-    git::clone(網址, 分支, 本地路徑)?;
+    git::clone(網址, 分支, 本地路徑, 代理)?;
     Ok(())
 }
 
-fn 同步既存倉庫(包: &配方包, 本地路徑: &Path) -> anyhow::Result<()> {
+fn 同步既存倉庫(包: &配方包, 本地路徑: &Path, 代理: Option<&str>) -> anyhow::Result<()> {
     const 遠端代號: &str = "origin";
     let 遠端分支 = 包.倉庫分支().unwrap_or("master");
-    git::pull(本地路徑, 遠端代號, 遠端分支)?;
+    git::pull(本地路徑, 遠端代號, 遠端分支, 代理)?;
     Ok(())
 }
 
@@ -122,7 +118,7 @@ mod git {
         pb: ProgressBar,
     }
 
-    pub fn clone(url: &str, branch: Option<&str>, path: &Path) -> Result<(), git2::Error> {
+    pub fn clone(url: &str, branch: Option<&str>, path: &Path, proxy: Option<&str>) -> Result<(), git2::Error> {
         let pb = ProgressBar::new(0);
         pb.set_style(
             ProgressStyle::default_bar()
@@ -157,6 +153,11 @@ mod git {
 
         let mut fo = FetchOptions::new();
         fo.remote_callbacks(cb);
+        if let Some(proxy_url) = proxy {
+            let mut proxy_opts = git2::ProxyOptions::new();
+            proxy_opts.url(proxy_url);
+            fo.proxy_options(proxy_opts);
+        }
         let mut repo = RepoBuilder::new();
         repo.fetch_options(fo).with_checkout(co);
         if let Some(branch) = branch {
@@ -173,6 +174,7 @@ mod git {
         repo: &'a Repository,
         refs: &[&str],
         remote: &'a mut Remote,
+        proxy: Option<&str>,
     ) -> Result<AnnotatedCommit<'a>, git2::Error> {
         let mut cb = RemoteCallbacks::new();
 
@@ -199,6 +201,11 @@ mod git {
 
         let mut fo = FetchOptions::new();
         fo.remote_callbacks(cb);
+        if let Some(proxy_url) = proxy {
+            let mut proxy_opts = git2::ProxyOptions::new();
+            proxy_opts.url(proxy_url);
+            fo.proxy_options(proxy_opts);
+        }
         // Always fetch all tags.
         // Perform a download and also update tips
         fo.download_tags(AutotagOption::All);
@@ -312,10 +319,11 @@ mod git {
         repo_path: &Path,
         remote_name: &str,
         remote_branch: &str,
+        proxy: Option<&str>,
     ) -> Result<(), git2::Error> {
         let repo = Repository::open(repo_path)?;
         let mut remote = repo.find_remote(remote_name)?;
-        let fetch_commit = do_fetch(&repo, &[remote_branch], &mut remote)?;
+        let fetch_commit = do_fetch(&repo, &[remote_branch], &mut remote, proxy)?;
         // TODO: modify do_merge to handle these cases:
         // 1. when the local branch does not exist;
         // 2. when the remote isn't a branch.
@@ -348,6 +356,7 @@ mod tests {
                 倉庫域名: None,
             },
             &本地測試路徑,
+            None,
         )?;
         Ok(())
     }

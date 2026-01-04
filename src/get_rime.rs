@@ -2,7 +2,7 @@ use tokio;
 use regex::Regex;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{fs::{metadata, File}, io::{Write, Read}, time::Instant, path::Path};
-use reqwest::{blocking::get, self, header::CONTENT_LENGTH};
+use reqwest::{self, header::CONTENT_LENGTH};
 use crate::download::下載參數;
 
 #[derive(serde::Deserialize)]
@@ -18,7 +18,7 @@ struct 版本信息 {
 }
 
 // 獲取指定版本的全部附件下載鏈接
-async fn 全部附件下載鏈接清單(版本: Option<&str>) -> Vec<String> {
+async fn 全部附件下載鏈接清單(版本: Option<&str>, 代理: Option<&str>) -> Vec<String> {
     let 版本名 = 版本.unwrap_or("");
     let 接口鏈接 = if 版本名.is_empty() {
         "https://api.github.com/repos/rime/librime/releases/latest".to_string()
@@ -26,7 +26,15 @@ async fn 全部附件下載鏈接清單(版本: Option<&str>) -> Vec<String> {
         format!("https://api.github.com/repos/rime/librime/releases/tags/{}", &版本名)
     };
     let mut 附件下載鏈接清單: Vec<String> = Vec::new();
-    let 網絡響應 = reqwest::Client::new()
+    let 終端 = if let Some(代理地址) = 代理 {
+        reqwest::Client::builder()
+            .proxy(reqwest::Proxy::all(代理地址).unwrap())
+            .build()
+            .unwrap()
+    } else {
+        reqwest::Client::new()
+    };
+    let 網絡響應 = 終端
         .get(&接口鏈接)
         .header("User-Agent", "Rust reqwest")
         .send()
@@ -48,9 +56,9 @@ async fn 全部附件下載鏈接清單(版本: Option<&str>) -> Vec<String> {
 }
 
 // Windows使用msvc構建的版本， macOS用universal
-fn 獲取最終下載鏈接(版本: Option<&str>) -> Option<String> {
+fn 獲取最終下載鏈接(版本: Option<&str>, 代理: Option<&str>) -> Option<String> {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let 鏈接清單 = runtime.block_on(全部附件下載鏈接清單(版本));
+    let 鏈接清單 = runtime.block_on(全部附件下載鏈接清單(版本, 代理));
     let 系統 = match std::env::consts::OS {
         "windows" => "Windows",
         "macos" => "macOS",
@@ -94,7 +102,7 @@ fn 獲取最終下載鏈接(版本: Option<&str>) -> Option<String> {
 }
 
 // 已實現 小狼毫 更新rime.dll
-fn 下載並更新引擎庫(鏈接: &String, 域名: String) -> anyhow::Result<()>{
+fn 下載並更新引擎庫(鏈接: &String, 域名: String, 代理: Option<&str>) -> anyhow::Result<()> {
     let 路徑 = Path::new(&鏈接);
     let mut 下載鏈接 = 鏈接.clone();
     if !域名.is_empty() {
@@ -103,7 +111,15 @@ fn 下載並更新引擎庫(鏈接: &String, 域名: String) -> anyhow::Result<(
     let 文件名 = 路徑.file_name()
         .and_then(|名字| 名字.to_str().map(|s| s.to_string()))
         .unwrap_or_else(|| "无效文件名".to_string());
-    let mut 網絡響應 = get(下載鏈接.as_str())?;
+    let 終端 = if let Some(代理地址) = 代理 {
+        reqwest::blocking::Client::builder()
+            .proxy(reqwest::Proxy::all(代理地址).unwrap())
+            .build()
+            .unwrap()
+    } else {
+        reqwest::blocking::Client::new()
+    };
+    let mut 網絡響應 = 終端.get(下載鏈接.as_str()).send()?;
     if !網絡響應.status().is_success() {
         eprintln!("網絡響應不成功");
         anyhow::bail!(format!("下載文件 '{}' 失敗 orz", 網絡響應.status()));
@@ -272,10 +288,10 @@ fn 解壓並更新引擎(_文件名: &String) -> anyhow::Result<()>{
 }
 
 pub fn 更新引擎庫(版本: &String, 參數: &下載參數) -> anyhow::Result<()>  {
-    參數.設置代理();
-    let 鏈接 = 獲取最終下載鏈接(Some(版本));
+    let 代理 = 參數.proxy.as_deref();
+    let 鏈接 = 獲取最終下載鏈接(Some(版本), 代理);
     if let Some(鏈接) = 鏈接 {
-        下載並更新引擎庫(&鏈接, 參數.host.clone().unwrap_or("".to_string()))
+        下載並更新引擎庫(&鏈接, 參數.host.clone().unwrap_or("".to_string()), 代理)
     } else {
         anyhow::bail!("未找到合適的下載鏈接.");
     }
