@@ -1,7 +1,8 @@
 use tokio;
 use regex::Regex;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::{fs::{metadata, File}, io::{Write, Read}, time::Instant, path::Path};
+use sha2::{Digest, Sha256};
+use std::{fs::File, io::{Write, Read}, time::Instant, path::{Path, PathBuf}};
 use reqwest::{self, header::CONTENT_LENGTH};
 use crate::download::下載參數;
 
@@ -9,6 +10,8 @@ use crate::download::下載參數;
 struct 附件信息 {
     #[serde(rename = "browser_download_url")]
     下載鏈接: String,
+    #[serde(rename = "digest")]
+    檢驗碼: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -18,14 +21,14 @@ struct 版本信息 {
 }
 
 // 獲取指定版本的全部附件下載鏈接
-async fn 全部附件下載鏈接清單(版本: Option<&str>, 代理: Option<&str>) -> Vec<String> {
+async fn 全部附件下載鏈接清單(版本: Option<&str>, 代理: Option<&str>) -> Vec<附件信息> {
     let 版本名 = 版本.unwrap_or("");
     let 接口鏈接 = if 版本名.is_empty() {
         "https://api.github.com/repos/rime/librime/releases/latest".to_string()
     } else {
         format!("https://api.github.com/repos/rime/librime/releases/tags/{}", &版本名)
     };
-    let mut 附件下載鏈接清單: Vec<String> = Vec::new();
+    let mut 附件下載鏈接清單: Vec<附件信息> = Vec::new();
     let 終端 = if let Some(代理地址) = 代理 {
         reqwest::Client::builder()
             .proxy(reqwest::Proxy::all(代理地址).unwrap())
@@ -42,9 +45,7 @@ async fn 全部附件下載鏈接清單(版本: Option<&str>, 代理: Option<&st
     match 網絡響應 {
         Ok(響應) if 響應.status().is_success() => {
             if let Ok(版本_json) = 響應.json::<版本信息>().await {
-                for 附件_json in 版本_json.附件清單 {
-                    附件下載鏈接清單.push(附件_json.下載鏈接);
-                }
+                附件下載鏈接清單.extend(版本_json.附件清單);
             } else {
                 eprintln!("解析 JSON 失败");
             }
@@ -56,9 +57,9 @@ async fn 全部附件下載鏈接清單(版本: Option<&str>, 代理: Option<&st
 }
 
 // Windows使用msvc構建的版本， macOS用universal
-fn 獲取最終下載鏈接(版本: Option<&str>, 代理: Option<&str>) -> Option<String> {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let 鏈接清單 = runtime.block_on(全部附件下載鏈接清單(版本, 代理));
+fn 獲取最終下載鏈接(版本: Option<&str>, 代理: Option<&str>) -> Option<附件信息> {
+    let 執行期 = tokio::runtime::Runtime::new().unwrap();
+    let 鏈接清單 = 執行期.block_on(全部附件下載鏈接清單(版本, 代理));
     let 系統 = match std::env::consts::OS {
         "windows" => "Windows",
         "macos" => "macOS",
@@ -80,21 +81,22 @@ fn 獲取最終下載鏈接(版本: Option<&str>, 代理: Option<&str>) -> Optio
     #[cfg(windows)]
     let 架構模式 = Regex::new(&視窗組件::獲取小狼毫架構模式()).unwrap();
 
-    for 鏈接 in 鏈接清單 {
+    for 附件 in 鏈接清單 {
+        let 鏈接 = &附件.下載鏈接;
         // 排除deps附件
         #[cfg(windows)] {
             let mut 判斷條件 = 系統模式.is_match(&鏈接) && 構建模式.is_match(&鏈接) 
                 && !Regex::new("deps").unwrap().is_match(&鏈接);
             判斷條件 = 判斷條件 && 架構模式.is_match(&鏈接);
             if 判斷條件 {
-                return Some(鏈接);
+                return Some(附件);
             }
         }
         #[cfg(not(windows))] {
             let 判斷條件 = 系統模式.is_match(&鏈接) && 構建模式.is_match(&鏈接) 
                 && !Regex::new("deps").unwrap().is_match(&鏈接);
             if 判斷條件 {
-                return Some(鏈接);
+                return Some(附件);
             }
         }
     }
@@ -102,9 +104,9 @@ fn 獲取最終下載鏈接(版本: Option<&str>, 代理: Option<&str>) -> Optio
 }
 
 // 已實現 小狼毫 更新rime.dll
-fn 下載並更新引擎庫(鏈接: &String, 域名: String, 代理: Option<&str>) -> anyhow::Result<()> {
-    let 路徑 = Path::new(&鏈接);
-    let mut 下載鏈接 = 鏈接.clone();
+fn 下載並更新引擎庫(附件: &附件信息, 域名: String, 代理: Option<&str>) -> anyhow::Result<()> {
+    let 路徑 = Path::new(&附件.下載鏈接);
+    let mut 下載鏈接 = 附件.下載鏈接.clone();
     if !域名.is_empty() {
         下載鏈接 = 下載鏈接.replace("github.com", &域名);
     }
@@ -130,12 +132,21 @@ fn 下載並更新引擎庫(鏈接: &String, 域名: String, 代理: Option<&str
         .and_then(|len| len.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
-    // 檢查要下載的文件是不是已經存在並且大小和計劃下載大小一樣，已存則跳過下載
-    if let Ok(元數據) = metadata(&文件名) {
-        let 現存文件大小 = 元數據.len();
-        if 現存文件大小 == 目標下載文件大小 {
-            println!(" '{}' 已存在並且已是最新.", 文件名);
-            return 解壓並更新引擎(&文件名);
+
+    // 若本地已存在且sha256匹配，直接使用
+    let 本地文件路徑 = PathBuf::from(&文件名);
+    if 本地文件路徑.exists() {
+        match 驗證文件哈希(&本地文件路徑, &附件.檢驗碼) {
+            Ok(true) => {
+                println!(" '{}' 已存在且校驗碼匹配，跳過下載。", 文件名);
+                return 解壓並更新引擎(&文件名);
+            }
+            Ok(false) => {
+                println!(" '{}' 已存在但校驗碼不符，重新下載。", 文件名);
+            }
+            Err(e) => {
+                eprintln!(" 無法校驗本地文件，將重新下載: {}", e);
+            }
         }
     }
     // 創建進度條並設置樣式
@@ -186,7 +197,12 @@ fn 下載並更新引擎庫(鏈接: &String, 域名: String, 代理: Option<&str
     // 結束進度條
     進度條.finish();
     println!();
-    解壓並更新引擎(&文件名)
+    // 下載完成後驗證sha256
+    if 驗證文件哈希(&本地文件路徑, &附件.檢驗碼)? {
+        解壓並更新引擎(&文件名)
+    } else {
+        anyhow::bail!(format!("'{}' 下載後校驗碼不匹配，請重試。", 文件名))
+    }
 }
 
 #[cfg(windows)]
@@ -289,10 +305,32 @@ fn 解壓並更新引擎(_文件名: &String) -> anyhow::Result<()>{
 
 pub fn 更新引擎庫(版本: &String, 參數: &下載參數) -> anyhow::Result<()>  {
     let 代理 = 參數.proxy.as_deref();
-    let 鏈接 = 獲取最終下載鏈接(Some(版本), 代理);
-    if let Some(鏈接) = 鏈接 {
-        下載並更新引擎庫(&鏈接, 參數.host.clone().unwrap_or("".to_string()), 代理)
+    let 附件 = 獲取最終下載鏈接(Some(版本), 代理);
+    if let Some(附件) = 附件 {
+        下載並更新引擎庫(&附件, 參數.host.clone().unwrap_or("".to_string()), 代理)
     } else {
         anyhow::bail!("未找到合適的下載鏈接.");
     }
+}
+
+fn 去除sha256前綴(摘要: &str) -> &str {
+    摘要.strip_prefix("sha256:").unwrap_or(摘要)
+}
+
+fn 文件_sha256(path: &Path) -> anyhow::Result<String> {
+    let mut 文件 = File::open(path)?;
+    let mut 雜湊器 = Sha256::new();
+    let mut 緩衝 = [0u8; 16 * 1024];
+    loop {
+        let 已讀 = 文件.read(&mut 緩衝)?;
+        if 已讀 == 0 { break; }
+        雜湊器.update(&緩衝[..已讀]);
+    }
+    Ok(format!("{:x}", 雜湊器.finalize()))
+}
+
+fn 驗證文件哈希(path: &Path, 摘要: &str) -> anyhow::Result<bool> {
+    let 預期 = 去除sha256前綴(摘要).to_lowercase();
+    let 實際 = 文件_sha256(path)?.to_lowercase();
+    Ok(實際 == 預期)
 }
