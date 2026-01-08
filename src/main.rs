@@ -52,12 +52,12 @@ pub struct 場地參數 {
 }
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "rime", about = "Rime 配方管理器")]
-struct 命令行參數 {
+#[structopt(about = "Rime 配方管理器")]
+struct Cli {
     #[structopt(flatten)]
     場地: 場地參數,
     #[structopt(subcommand)]
-    命令: 子命令,
+    command: Option<子命令>,
 }
 
 #[derive(Debug, StructOpt)]
@@ -123,9 +123,24 @@ enum 子命令 {
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let 參數 = 命令行參數::from_args();
-    log::debug!("參數: {:?}", 參數);
-    執行命令(參數.命令, &參數.場地)
+    let cli = Cli::from_args();
+    log::debug!("參數: {:?}", cli.command);
+
+    match cli.command {
+        Some(命令行參數) => 執行命令(命令行參數, &cli.場地),
+        None => {
+            #[cfg(feature = "tui")]
+            {
+                return tui::進入tui(&cli.場地);
+            }
+            #[cfg(not(feature = "tui"))]
+            {
+                Cli::clap().print_help()?;
+                println!();
+                Ok(())
+            }
+        }
+    }
 }
 
 fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Result<()> {
