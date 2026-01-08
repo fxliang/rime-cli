@@ -22,8 +22,11 @@ reqwest = { version = "0.11", features = ["json", "blocking"] }
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 sha2 = "0.10"
-dialoguer = "0.11"
-rppi_parser = { path = "src/rppi_parser" }
+dialoguer = { version = "0.11", optional = true}
+rppi_parser = { path = "src/rppi_parser", optional = true }
+
+[features]
+tui = ["dialoguer", "rppi_parser"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 git2 = { version = "0.20.0", features = ["vendored-libgit2", "vendored-openssl"] }
