@@ -1487,6 +1487,7 @@ dependencies = [
  "log",
  "regex",
  "reqwest",
+ "rppi_parser",
  "serde",
  "sevenz-rust2",
  "sha2",
@@ -1496,6 +1497,14 @@ dependencies = [
  "windows",
  "windows-version",
  "winreg 0.55.0",
+]
+
+[[package]]
+name = "rppi_parser"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
