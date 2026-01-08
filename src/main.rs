@@ -232,21 +232,21 @@ fn 進入tui() -> anyhow::Result<()> {
         let sel = Select::with_theme(&主題)
             .items(&選項)
             .default(0)
-            .interact_on(&終端)?;
+            .interact_on_opt(&終端)?;
         let 應退出 = match sel {
-            0 => {
+            Some(0) => {
                 if let Some(msg) = 處理下載或安裝(配方操作::Download, &主題, &終端, host.as_deref(), proxy.as_deref(), &mut rppi索引)? {
                     狀態 = Some(msg);
                 }
                 false
             }
-            1 => {
+            Some(1) => {
                 if let Some(msg) = 處理下載或安裝(配方操作::Install, &主題, &終端, host.as_deref(), proxy.as_deref(), &mut rppi索引)? {
                     狀態 = Some(msg);
                 }
                 false
             }
-            2 => {
+            Some(2) => {
                 let tag = match 讀取可取消("版本標籤 (留空使用最新)", &主題)? {
                     Some(t) => t,
                     None => continue 'tui,
@@ -258,7 +258,7 @@ fn 進入tui() -> anyhow::Result<()> {
                 狀態 = Some(執行tui命令參數(args, host.as_deref(), proxy.as_deref())?);
                 false
             }
-            3 => {
+            Some(3) => {
                 let Some(schema) = 讀取可取消("選擇的輸入方案", &主題)? else {
                     continue 'tui;
                 };
@@ -271,7 +271,7 @@ fn 進入tui() -> anyhow::Result<()> {
                 }
                 false
             }
-            4 => {
+            Some(4) => {
                 let Some(輸入) = 讀取可取消("要加入的輸入方案 (空格分隔)", &主題)? else {
                     continue 'tui;
                 };
@@ -286,7 +286,7 @@ fn 進入tui() -> anyhow::Result<()> {
                 }
                 false
             }
-            5 => {
+            Some(5) => {
                 let config = match 讀取可取消("目標配置 (如 default)", &主題)? {
                     Some(c) => c,
                     None => continue 'tui,
@@ -308,11 +308,11 @@ fn 進入tui() -> anyhow::Result<()> {
                 }
                 false
             }
-            6 => {
+            Some(6) => {
                 狀態 = Some(執行tui命令參數(vec!["build".to_string()], host.as_deref(), proxy.as_deref())?);
                 false
             }
-            7 => {
+            Some(7) => {
                 let 輸入: String = Input::with_theme(&主題)
                     .with_prompt("Proxy (留空清除)")
                     .allow_empty(true)
@@ -322,7 +322,7 @@ fn 進入tui() -> anyhow::Result<()> {
                 保存tui配置(&配置)?;
                 false
             }
-            8 => {
+            Some(8) => {
                 let 輸入: String = Input::with_theme(&主題)
                     .with_prompt("Host (留空清除)")
                     .allow_empty(true)
@@ -332,6 +332,7 @@ fn 進入tui() -> anyhow::Result<()> {
                 保存tui配置(&配置)?;
                 false
             }
+            None => true,
             _ => true,
         };
         if 應退出 {
@@ -375,6 +376,13 @@ fn 處理下載或安裝(
                 配方操作::Download => "download".to_string(),
                 配方操作::Install => "install".to_string(),
             }];
+            let 配方清單 = 配方.join(" ");
+            let prompt = if args[0] == "install" {
+                format!("安裝配方 {}", 配方清單)
+            } else {
+                format!("下載配方 {}", 配方清單)
+            };
+            println!("{}", style(prompt).blue());
             args.extend(配方);
             Ok(Some(執行tui命令參數(args, host, proxy)?))
         }
@@ -412,10 +420,11 @@ fn 選擇配方來源(主題: &ColorfulTheme, 終端: &Term) -> anyhow::Result<O
     let sel = Select::with_theme(主題)
         .items(&選項)
         .default(0)
-        .interact_on(終端)?;
+        .interact_on_opt(終端)?;
     match sel {
-        0 => Ok(Some(配方選擇來源::手動)),
-        1 => Ok(Some(配方選擇來源::Rppi)),
+        Some(0) => Ok(Some(配方選擇來源::手動)),
+        Some(1) => Ok(Some(配方選擇來源::Rppi)),
+        None => Ok(None),
         _ => Ok(None),
     }
 }
@@ -493,25 +502,25 @@ fn 選擇rppi配方(
         let sel = Select::with_theme(主題)
             .items(&顯示文本)
             .default(0)
-            .interact_on(終端)?;
+            .interact_on_opt(終端)?;
 
-        match 條目列表
-            .get(sel)
-            .unwrap_or(&Rppi菜單條目::取消)
-        {
-            Rppi菜單條目::分類 { key } => {
-                if let Some(next) = 當前.children.get(key) {
-                    堆疊.push(當前);
-                    當前 = next;
+        match sel {
+            None => return Ok(None), // Esc -> go back
+            Some(idx) => match 條目列表.get(idx).unwrap_or(&Rppi菜單條目::取消) {
+                Rppi菜單條目::分類 { key } => {
+                    if let Some(next) = 當前.children.get(key) {
+                        堆疊.push(當前);
+                        當前 = next;
+                    }
                 }
-            }
-            Rppi菜單條目::配方(recipe) => return Ok(Some(recipe.clone())),
-            Rppi菜單條目::返回 => {
-                if let Some(prev) = 堆疊.pop() {
-                    當前 = prev;
+                Rppi菜單條目::配方(recipe) => return Ok(Some(recipe.clone())),
+                Rppi菜單條目::返回 => {
+                    if let Some(prev) = 堆疊.pop() {
+                        當前 = prev;
+                    }
                 }
-            }
-            Rppi菜單條目::取消 => return Ok(None),
+                Rppi菜單條目::取消 => return Ok(None),
+            },
         }
     }
 }
