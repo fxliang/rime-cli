@@ -372,19 +372,22 @@ fn 處理下載或安裝(
             if 配方.is_empty() {
                 return Ok(None);
             }
-            let mut args = vec![match 操作 {
-                配方操作::Download => "download".to_string(),
-                配方操作::Install => "install".to_string(),
-            }];
-            let 配方清單 = 配方.join(" ");
-            let prompt = if args[0] == "install" {
-                format!("安裝配方 {}", 配方清單)
-            } else {
-                format!("下載配方 {}", 配方清單)
-            };
-            println!("{}", style(prompt).blue());
-            args.extend(配方);
-            Ok(Some(執行tui命令參數(args, host, proxy)?))
+            let mut 訊息 = Vec::new();
+            for p in 配方 {
+                let mut args = vec![match 操作 {
+                    配方操作::Download => "download".to_string(),
+                    配方操作::Install => "install".to_string(),
+                }];
+                let prompt = if args[0] == "install" {
+                    format!("安裝配方 {}", p)
+                } else {
+                    format!("下載配方 {}", p)
+                };
+                println!("{}", style(prompt).blue());
+                args.push(p);
+                訊息.push(執行tui命令參數(args, host, proxy)?);
+            }
+            Ok(Some(訊息.join("\n")))
         }
         配方選擇來源::Rppi => {
             if let Some(配方列表) = 從rppi選擇配方(主題, 終端, host, proxy, rppi索引)? {
