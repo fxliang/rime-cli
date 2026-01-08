@@ -18,6 +18,12 @@ use rime_levers::{
 
 #[derive(Debug, StructOpt)]
 #[structopt(about = "Rime 配方管理器")]
+struct Cli {
+    #[structopt(subcommand)]
+    command: Option<子命令>,
+}
+
+#[derive(Debug, StructOpt)]
 enum 子命令 {
     /// 加入輸入方案列表
     Add {
@@ -75,10 +81,24 @@ enum 子命令 {
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let 命令行參數 = 子命令::from_args();
-    log::debug!("參數: {:?}", 命令行參數);
+    let cli = Cli::from_args();
+    log::debug!("參數: {:?}", cli.command);
 
-    執行命令(命令行參數)
+    match cli.command {
+        Some(命令行參數) => 執行命令(命令行參數),
+        None => {
+            #[cfg(feature = "tui")]
+            {
+                return tui::進入tui();
+            }
+            #[cfg(not(feature = "tui"))]
+            {
+                Cli::clap().print_help()?;
+                println!();
+                Ok(())
+            }
+        }
+    }
 }
 
 fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
