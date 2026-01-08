@@ -2,7 +2,7 @@ use crate::package::配方包;
 use crate::recipe::配方名片;
 
 use anyhow::anyhow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -19,6 +19,9 @@ pub struct 下載參數 {
 }
 
 impl 下載參數 {
+    pub fn new(host: Option<String>, proxy: Option<String>, token: Option<String>) -> Self {
+        Self { host, proxy, token }
+    }
     pub fn 代理地址(&self) -> Option<&str> {
         self.proxy.as_deref()
     }
@@ -43,6 +46,24 @@ pub fn 下載配方包(衆配方: &[配方名片], 參數: 下載參數) -> anyh
         }
     }
     Ok(())
+}
+
+/// 確保本地存在最新的 rime/rppi 倉庫並返回本地路徑。
+pub fn 同步rppi索引(參數: &下載參數) -> anyhow::Result<PathBuf> {
+    let 代理 = 參數.代理地址();
+    let 倉庫域名 = 參數.倉庫域名().unwrap_or("github.com");
+    let 本地路徑 = PathBuf::from("pkg").join("rime").join("rppi");
+    let 網址 = format!("https://{}/rime/rppi.git", 倉庫域名);
+    println!("同步 rime/rppi 倉庫到本地: {}", 本地路徑.display());
+    if 本地路徑.exists() {
+        let 分支 = git::default_branch(&本地路徑, "origin")
+            .unwrap_or_else(|| "main".to_string());
+        git::pull(&本地路徑, "origin", &分支, 代理)?;
+        return Ok(本地路徑);
+    }
+
+    git::clone(&網址, None, &本地路徑, 代理)?;
+    Ok(本地路徑)
 }
 
 fn 搬運倉庫(包: &配方包, 本地路徑: &Path, 代理: Option<&str>) -> anyhow::Result<()> {
@@ -222,6 +243,16 @@ mod git {
 
         let fetch_head = repo.find_reference("FETCH_HEAD")?;
         repo.reference_to_annotated_commit(&fetch_head)
+    }
+
+    pub fn default_branch(repo_path: &Path, remote_name: &str) -> Option<String> {
+        let repo = Repository::open(repo_path).ok()?;
+        let head_ref = repo
+            .find_reference(&format!("refs/remotes/{}/HEAD", remote_name))
+            .ok()?;
+        head_ref
+            .symbolic_target()
+            .and_then(|s| s.rsplit('/').next().map(|s| s.to_string()))
     }
 
     fn fast_forward(
