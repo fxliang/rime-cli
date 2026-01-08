@@ -33,7 +33,7 @@ jobs:
 
       - name: Build
         run: |
-          cargo make build-release
+          cargo build --release --features=tui
 
       # Test on Windows not ok yet
       #- name: Test
