@@ -51,7 +51,7 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --release
+          cargo build --release --features=tui
 
       # Test on Windows not ok yet
       #- name: Test
