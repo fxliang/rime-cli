@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{collections::HashSet, fs, path::PathBuf};
 use dialoguer::{theme::ColorfulTheme, Input, Select, console::{style, Term}};
 use structopt::StructOpt;
 
@@ -9,12 +9,14 @@ mod recipe;
 mod rime_levers;
 mod get_rime;
 
-use download::{下載參數, 下載配方包};
+use download::{下載參數, 下載配方包, 同步rppi索引};
+use rppi_parser::{CatalogNode, Recipe, load_catalog};
 use install::安裝配方;
 use recipe::配方名片;
 use rime_levers::{
     加入輸入方案列表, 製備輸入法固件, 設置引擎啓動參數, 選擇輸入方案, 配置補丁
 };
+// rppi_parser crate is a workspace dependency
 
 #[derive(Debug, StructOpt)]
 #[structopt(about = "Rime 配方管理器")]
@@ -69,6 +71,18 @@ enum 子命令 {
     },
     /// 進入互動式界面
     Tui,
+}
+
+#[derive(Copy, Clone)]
+enum 配方操作 {
+    Download,
+    Install,
+}
+
+#[derive(Copy, Clone)]
+enum 配方選擇來源 {
+    手動,
+    Rppi,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -196,6 +210,7 @@ fn 進入tui() -> anyhow::Result<()> {
     let mut 配置 = 讀取tui配置()?;
     let mut proxy = 配置.proxy.clone();
     let mut host = 配置.host.clone();
+    let mut rppi索引: Option<PathBuf> = None;
     let mut 狀態: Option<String> = None;
 
     'tui: loop {
@@ -214,39 +229,20 @@ fn 進入tui() -> anyhow::Result<()> {
             format!("設置域名 ({})", host.as_deref().unwrap_or("未設置")),
             "退出".to_string(),
         ];
-        let _ = 終端.write_line(橫線().as_str());
         let sel = Select::with_theme(&主題)
             .items(&選項)
             .default(0)
             .interact_on(&終端)?;
         let 應退出 = match sel {
             0 => {
-                let Some(輸入) = 讀取可取消("要下載的配方 (空格分隔)", &主題)? else {
-                    continue 'tui;
-                };
-                let 配方 = 輸入
-                    .split_whitespace()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<_>>();
-                if !配方.is_empty() {
-                    let mut args = vec!["download".to_string()];
-                    args.extend(配方);
-                    狀態 = Some(執行tui命令參數(args, host.as_deref(), proxy.as_deref())?);
+                if let Some(msg) = 處理下載或安裝(配方操作::Download, &主題, &終端, host.as_deref(), proxy.as_deref(), &mut rppi索引)? {
+                    狀態 = Some(msg);
                 }
                 false
             }
             1 => {
-                let Some(輸入) = 讀取可取消("要安裝的配方 (空格分隔)", &主題)? else {
-                    continue 'tui;
-                };
-                let 配方 = 輸入
-                    .split_whitespace()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<_>>();
-                if !配方.is_empty() {
-                    let mut args = vec!["install".to_string()];
-                    args.extend(配方);
-                    狀態 = Some(執行tui命令參數(args, host.as_deref(), proxy.as_deref())?);
+                if let Some(msg) = 處理下載或安裝(配方操作::Install, &主題, &終端, host.as_deref(), proxy.as_deref(), &mut rppi索引)? {
+                    狀態 = Some(msg);
                 }
                 false
             }
@@ -347,6 +343,214 @@ fn 進入tui() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn 處理下載或安裝(
+    操作: 配方操作,
+    主題: &ColorfulTheme,
+    終端: &Term,
+    host: Option<&str>,
+    proxy: Option<&str>,
+    rppi索引: &mut Option<PathBuf>,
+) -> anyhow::Result<Option<String>> {
+    let Some(來源) = 選擇配方來源(主題, 終端)? else {
+        return Ok(None);
+    };
+
+    match 來源 {
+        配方選擇來源::手動 => {
+            let 提示 = match 操作 {
+                配方操作::Download => "要下載的配方 (空格分隔)",
+                配方操作::Install => "要安裝的配方 (空格分隔)",
+            };
+            let Some(輸入) = 讀取可取消(提示, 主題)? else {
+                return Ok(None);
+            };
+            let 配方 = 輸入
+                .split_whitespace()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>();
+            if 配方.is_empty() {
+                return Ok(None);
+            }
+            let mut args = vec![match 操作 {
+                配方操作::Download => "download".to_string(),
+                配方操作::Install => "install".to_string(),
+            }];
+            args.extend(配方);
+            Ok(Some(執行tui命令參數(args, host, proxy)?))
+        }
+        配方選擇來源::Rppi => {
+            if let Some(配方列表) = 從rppi選擇配方(主題, 終端, host, proxy, rppi索引)? {
+                let mut 訊息 = Vec::new();
+                for 配方 in 配方列表 {
+                    let mut args = vec![match 操作 {
+                        配方操作::Download => "download".to_string(),
+                        配方操作::Install => "install".to_string(),
+                    }];
+                    let prompt = if args[0] == "install" {
+                        format!("安裝配方 {}", 配方)
+                    } else {
+                        format!("下載配方 {}", 配方)
+                    };
+                    println!("{}", style(prompt).blue());
+                    args.push(配方);
+                    訊息.push(執行tui命令參數(args, host, proxy)?);
+                }
+                Ok(Some(訊息.join("\n")))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+}
+
+fn 選擇配方來源(主題: &ColorfulTheme, 終端: &Term) -> anyhow::Result<Option<配方選擇來源>> {
+    let 選項 = vec![
+        "直接輸入配方".to_string(),
+        "瀏覽 rime/rppi".to_string(),
+        "返回".to_string(),
+    ];
+    let sel = Select::with_theme(主題)
+        .items(&選項)
+        .default(0)
+        .interact_on(終端)?;
+    match sel {
+        0 => Ok(Some(配方選擇來源::手動)),
+        1 => Ok(Some(配方選擇來源::Rppi)),
+        _ => Ok(None),
+    }
+}
+
+fn 從rppi選擇配方(
+    主題: &ColorfulTheme,
+    終端: &Term,
+    host: Option<&str>,
+    proxy: Option<&str>,
+    rppi索引: &mut Option<PathBuf>,
+) -> anyhow::Result<Option<Vec<String>>> {
+    let 參數 = 下載參數::new(
+        host.map(|h| h.to_string()),
+        proxy.map(|p| p.to_string()),
+        None,
+    );
+    let rppi目錄 = if let Some(已拉取) = rppi索引 {
+        已拉取.clone()
+    } else {
+        let 拉取路徑 = 同步rppi索引(&參數)?;
+        *rppi索引 = Some(拉取路徑.clone());
+        拉取路徑
+    };
+    let catalog = load_catalog(&rppi目錄)?;
+    Ok(選擇rppi配方(&catalog, 主題, 終端)?.map(|r| rppi配方列表(&r)))
+}
+
+enum Rppi菜單條目 {
+    分類 { key: String },
+    配方(Recipe),
+    返回,
+    取消,
+}
+
+fn 選擇rppi配方(
+    catalog: &CatalogNode,
+    主題: &ColorfulTheme,
+    終端: &Term,
+) -> anyhow::Result<Option<Recipe>> {
+    let mut 當前 = catalog;
+    let mut 堆疊: Vec<&CatalogNode> = Vec::new();
+
+    loop {
+        let mut 條目列表: Vec<Rppi菜單條目> = Vec::new();
+        let mut 顯示文本: Vec<String> = Vec::new();
+
+        if let Some(parent) = &當前.parent {
+            for cat in &parent.categories {
+                let label = format!("{} ({})", cat.name, cat.key);
+                條目列表.push(Rppi菜單條目::分類 { key: cat.key.clone() });
+                顯示文本.push(label);
+            }
+        }
+
+        if let Some(child) = &當前.child {
+            for recipe in &child.recipes {
+                let label = format!("{} ({})", recipe.name, recipe.repo);
+                條目列表.push(Rppi菜單條目::配方(recipe.clone()));
+                顯示文本.push(label);
+            }
+        }
+
+        if !堆疊.is_empty() {
+            條目列表.push(Rppi菜單條目::返回);
+            顯示文本.push("返回上級".to_string());
+        }
+
+        條目列表.push(Rppi菜單條目::取消);
+        顯示文本.push("取消".to_string());
+
+        if 顯示文本.is_empty() {
+            return Ok(None);
+        }
+
+        let sel = Select::with_theme(主題)
+            .items(&顯示文本)
+            .default(0)
+            .interact_on(終端)?;
+
+        match 條目列表
+            .get(sel)
+            .unwrap_or(&Rppi菜單條目::取消)
+        {
+            Rppi菜單條目::分類 { key } => {
+                if let Some(next) = 當前.children.get(key) {
+                    堆疊.push(當前);
+                    當前 = next;
+                }
+            }
+            Rppi菜單條目::配方(recipe) => return Ok(Some(recipe.clone())),
+            Rppi菜單條目::返回 => {
+                if let Some(prev) = 堆疊.pop() {
+                    當前 = prev;
+                }
+            }
+            Rppi菜單條目::取消 => return Ok(None),
+        }
+    }
+}
+
+fn rppi配方列表(recipe: &Recipe) -> Vec<String> {
+    let mut 已見 = HashSet::new();
+    let mut 列表 = Vec::new();
+
+    let 主配方 = rppi配方串(recipe);
+    已見.insert(主配方.clone());
+    列表.push(主配方);
+
+    if let Some(deps) = &recipe.dependencies {
+        for d in deps {
+            if 已見.insert(d.clone()) {
+                列表.push(d.clone());
+            }
+        }
+    }
+    if let Some(rdeps) = &recipe.reverse_dependencies {
+        for d in rdeps {
+            if 已見.insert(d.clone()) {
+                列表.push(d.clone());
+            }
+        }
+    }
+
+    列表
+}
+
+fn rppi配方串(recipe: &Recipe) -> String {
+    let mut spec = recipe.repo.clone();
+    if let Some(branch) = &recipe.branch {
+        spec.push('@');
+        spec.push_str(branch);
+    }
+    spec
+}
+
 fn 執行tui命令參數(
     args: Vec<String>,
     host: Option<&str>,
@@ -427,9 +631,4 @@ fn 非空或無(s: String) -> Option<String> {
 
 fn 包含選項(args: &[String], key: &str) -> bool {
     args.iter().any(|a| a == key)
-}
-
-fn 橫線() -> String {
-    let 終端寬度 = Term::stdout().size().1 as usize;
-    "-".repeat(終端寬度 / 2)
 }
