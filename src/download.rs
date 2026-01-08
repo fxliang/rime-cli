@@ -2,7 +2,7 @@ use crate::package::配方包;
 use crate::recipe::配方名片;
 
 use anyhow::anyhow;
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -19,6 +19,7 @@ pub struct 下載參數 {
 }
 
 impl 下載參數 {
+    #[cfg(feature = "tui")]
     pub fn new(host: Option<String>, proxy: Option<String>, token: Option<String>) -> Self {
         Self { host, proxy, token }
     }
@@ -48,7 +49,10 @@ pub fn 下載配方包(衆配方: &[配方名片], 參數: 下載參數) -> anyh
     Ok(())
 }
 
+#[cfg(feature = "tui")]
+use std::path::PathBuf;
 /// 確保本地存在最新的 rime/rppi 倉庫並返回本地路徑。
+#[cfg(feature = "tui")]
 pub fn 同步rppi索引(參數: &下載參數) -> anyhow::Result<PathBuf> {
     let 代理 = 參數.代理地址();
     let 倉庫域名 = 參數.倉庫域名().unwrap_or("github.com");
@@ -245,6 +249,7 @@ mod git {
         repo.reference_to_annotated_commit(&fetch_head)
     }
 
+    #[cfg(feature = "tui")]
     pub fn default_branch(repo_path: &Path, remote_name: &str) -> Option<String> {
         let repo = Repository::open(repo_path).ok()?;
         let head_ref = repo
