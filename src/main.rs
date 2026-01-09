@@ -14,7 +14,6 @@ use recipe::配方名片;
 use rime_levers::{
     加入輸入方案列表, 製備輸入法固件, 設置引擎啓動參數, 選擇輸入方案, 配置補丁
 };
-// rppi_parser crate is a workspace dependency
 
 #[derive(Debug, StructOpt)]
 #[structopt(about = "Rime 配方管理器")]
@@ -130,8 +129,15 @@ fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
                 .map(|rx| 配方名片::from(rx.as_str()))
                 .collect::<Vec<_>>();
             下載配方包(&衆配方, 下載參數)?;
+            #[cfg(windows)]
+            let 默認用户數據目錄 = get_rime::視窗組件::默認用戶目錄();
+            #[cfg(windows)]
+            let 用戶數據目錄 = get_rime::視窗組件::用戶目錄().unwrap_or(默認用户數據目錄.unwrap());
+            #[cfg(not(windows))]
+            let 用戶數據目錄 = get_rime::用戶目錄().unwrap();
+
             for 配方 in &衆配方 {
-                安裝配方(配方)?;
+                安裝配方(配方, &PathBuf::from(&用戶數據目錄))?;
             }
         }
         子命令::Patch { config, key, value } => {
@@ -248,7 +254,7 @@ mod tui {
             }
             let 選項 = vec![
                 "下載配方".to_string(),
-                "安裝配方(未實現)".to_string(),
+                "安裝配方".to_string(),
                 "更新引擎庫".to_string(),
                 "選擇輸入方案".to_string(),
                 "加入輸入方案列表".to_string(),
