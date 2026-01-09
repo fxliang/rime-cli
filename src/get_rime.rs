@@ -6,6 +6,25 @@ use std::{fs::File, io::{Write, Read}, time::Instant, path::{Path, PathBuf}};
 use reqwest::{self, header::CONTENT_LENGTH};
 use crate::download::下載參數;
 
+#[cfg(windows)]
+fn 查找_powershell() -> Option<PathBuf> {
+    let mut 候選: Vec<PathBuf> = Vec::new();
+    if let Some(root) = std::env::var_os("SystemRoot") {
+        let mut p = PathBuf::from(root);
+        p.push("System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+        候選.push(p);
+    }
+    候選.push(PathBuf::from("powershell.exe"));
+    候選.push(PathBuf::from("pwsh.exe"));
+    if let Some(path_var) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            候選.push(dir.join("powershell.exe"));
+            候選.push(dir.join("pwsh.exe"));
+        }
+    }
+    候選.into_iter().find(|p| p.is_file())
+}
+
 #[derive(serde::Deserialize)]
 struct 附件信息 {
     #[serde(rename = "browser_download_url")]
@@ -263,69 +282,112 @@ mod 視窗組件 {
 }
 
 #[cfg(windows)]
-fn 使用提權腳本複製(來源: &Path, 目標: &Path) -> anyhow::Result<()> {
-    use std::{env, process::Command};
-    // 先確保來源存在，避免白跑提權
+struct 提權複製選項 {
+    隱藏窗口: bool,
+    等待完成: bool,
+    父進程: Option<u32>,
+    重啟服務: Option<PathBuf>,
+    驗證哈希: bool,
+}
+
+#[cfg(windows)]
+fn 執行提權複製腳本(來源: &Path, 目標: &Path, 選項: 提權複製選項) -> anyhow::Result<()> {
+    use std::process::Command;
     if !來源.exists() {
         anyhow::bail!(format!("源文件不存在: {}", 來源.display()));
     }
-    fn 查找_powershell() -> Option<PathBuf> {
-        let mut 候選: Vec<PathBuf> = Vec::new();
-        if let Some(root) = env::var_os("SystemRoot") {
-            let mut p = PathBuf::from(root);
-            p.push("System32\\WindowsPowerShell\\v1.0\\powershell.exe");
-            候選.push(p);
-        }
-        候選.push(PathBuf::from("powershell.exe"));
-        候選.push(PathBuf::from("pwsh.exe"));
-        if let Some(path_var) = env::var_os("PATH") {
-            for dir in env::split_paths(&path_var) {
-                候選.push(dir.join("powershell.exe"));
-                候選.push(dir.join("pwsh.exe"));
-            }
-        }
-        候選.into_iter().find(|p| p.is_file())
-    }
     let ps = 查找_powershell().ok_or_else(|| anyhow::anyhow!("未找到 PowerShell，可手動複製 rime.dll"))?;
-    let ps_cmd = ps.to_string_lossy().replace("'", "''");
-    // 構造內層腳本，直接通過 -Command 傳遞，避免落地 ps1
-    // 單引號要雙寫以避免在外層引號中斷
-    // 使用絕對路徑傳給提權的 PowerShell，避免工作目錄不同導致找不到文件
     let 來源路徑 = 來源.canonicalize()
         .unwrap_or_else(|_| 來源.to_path_buf())
         .to_string_lossy()
         .replace("'", "''");
-    let 目標路徑 = 目標.to_string_lossy().replace("'", "''");
+    let 目標路徑 = 目標.canonicalize()
+        .unwrap_or_else(|_| 目標.to_path_buf())
+        .to_string_lossy()
+        .replace("'", "''");
+
+    let 哈希函數 = if 選項.驗證哈希 {
+        "function Hash($p){ $sha=[System.Security.Cryptography.SHA256]::Create(); $fs=[System.IO.File]::OpenRead($p); try { ($sha.ComputeHash($fs) | ForEach-Object { $_.ToString('x2') }) -join '' } finally { $fs.Dispose(); $sha.Dispose() } };"
+    } else { "" };
+
+    let 等待父進程 = match 選項.父進程 {
+        Some(pid) => format!("Wait-Process -Id {} -ErrorAction SilentlyContinue; ", pid),
+        None => "".to_string(),
+    };
+
+    let 驗證腳本 = if 選項.驗證哈希 {
+        "\
+$srcHash = Hash $source; \
+$dstHash = Hash $dest; \
+if ($srcHash -ne $dstHash) { throw \"hash mismatch src=$srcHash dst=$dstHash\" };"
+    } else {
+        ""
+    };
+
+    let 重啟服務腳本 = if let Some(svc) = 選項.重啟服務 {
+        let svc_path = svc.to_string_lossy().replace("'", "''");
+        format!(" if (Test-Path '{svc}') {{ Start-Process -FilePath '{svc}' -WindowStyle Hidden | Out-Null }};", svc = svc_path)
+    } else {
+        "".to_string()
+    };
+
+    
+
     let 內層腳本 = format!(
         "\
-$ErrorActionPreference = 'Stop'; \
-$source = '{source}'; \
-$dest = '{dest}'; \
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null; \
-Copy-Item -LiteralPath $source -Destination $dest -Force; \
-Write-Host \"Source: $source\"; \
-Write-Host \"Dest:   $dest\"; \
-if (Test-Path $dest) {{ Write-Host 'Copy succeeded.' }} else {{ Write-Host 'Copy failed.' }};",
+$ErrorActionPreference='Stop'; \
+{hash_fn} \
+$source='{source}'; \
+$dest='{dest}'; \
+{wait_parent}New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null; \
+    Copy-Item -LiteralPath $source -Destination $dest -Force;{verify}{restart}",
+        hash_fn = 哈希函數,
         source = 來源路徑,
         dest = 目標路徑,
+        wait_parent = 等待父進程,
+        verify = 驗證腳本,
+        restart = 重啟服務腳本,
     );
-    // 再次把單引號變成兩個單引號，供 Start-Process 的 -ArgumentList 單引號包裹
-    let 內層腳本_轉義 = 內層腳本.replace("'", "''");
-    let 提權命令 = format!(
-        "Start-Process -FilePath '{ps}' -Verb RunAs -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','{script}' -Wait",
-        ps = ps_cmd,
-        script = 內層腳本_轉義,
-    );
-    let 狀態 = Command::new(&ps)
-        .arg("-NoProfile")
-        .arg("-ExecutionPolicy").arg("Bypass")
-        .arg("-Command").arg(提權命令)
-        .status()?;
 
-    if !狀態.success() {
-        anyhow::bail!("提權複製腳本執行失敗，請允許提權或手動複製。");
+    let 內層腳本_轉義 = 內層腳本.replace("'", "''");
+    let ps_cmd = ps.to_string_lossy().replace("'", "''");
+    let window_flag = if 選項.隱藏窗口 { "-WindowStyle Hidden " } else { "" };
+    let wait_flag = if 選項.等待完成 { " -Wait" } else { "" };
+
+    let 提權命令 = format!(
+        "Start-Process -FilePath '{ps}' -Verb RunAs {window}-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','{script}'{wait}",
+        ps = ps_cmd,
+        window = window_flag,
+        script = 內層腳本_轉義,
+        wait = wait_flag,
+    );
+
+    if 選項.等待完成 {
+        let 狀態 = Command::new(&ps)
+            .arg("-NoProfile")
+            .arg("-ExecutionPolicy").arg("Bypass")
+            .arg("-Command").arg(提權命令)
+            .status()?;
+        if !狀態.success() {
+            anyhow::bail!("提權腳本執行失敗，請允許提權或手動複製。");
+        }
+    } else {
+        Command::new(&ps)
+            .arg("-NoProfile")
+            .arg("-ExecutionPolicy").arg("Bypass")
+            .arg("-Command").arg(提權命令)
+            .spawn()?;
     }
+
     Ok(())
+}
+
+#[cfg(windows)]
+fn 路徑相同(左: &Path, 右: &Path) -> bool {
+    let 左標準 = 左.canonicalize().unwrap_or_else(|_| 左.to_path_buf());
+    let 右標準 = 右.canonicalize().unwrap_or_else(|_| 右.to_path_buf());
+    左標準.to_string_lossy().to_ascii_lowercase()
+        == 右標準.to_string_lossy().to_ascii_lowercase()
 }
 
 #[cfg(windows)]
@@ -350,40 +412,98 @@ fn 解壓並更新引擎(文件名: &String) -> anyhow::Result<()>{
                 let 源庫文件 = Path::new(&目錄名.as_str()).join("dist/lib/rime.dll");
                 let 源庫文件 = std::fs::canonicalize(&源庫文件)
                     .map_err(|_| anyhow::anyhow!(format!("源文件不存在: {}", 源庫文件.display())))?;
-                let 舊哈希 = 文件_sha256(&目標庫文件).ok();
-                使用提權腳本複製(&源庫文件, &目標庫文件)
-                    .map_err(|e| {
-                        eprintln!(" 無法複製文件到目標位置 '{}': {}", &目標庫文件.display(), e);
-                        e
-                    })?;
-                let 源哈希 = 文件_sha256(&源庫文件).ok();
-                let 新哈希 = 文件_sha256(&目標庫文件).ok();
-                match (&源哈希, &新哈希) {
-                    (Some(源), Some(新)) if 源 != 新 => {
-                        anyhow::bail!(format!("文件複製失敗: 源文件和目標文件哈希不匹配."));
+                let 自身所在目錄 = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf()));
+                let 當前工作目錄 = std::env::current_dir().ok();
+                let 目標所在目錄 = 目標庫文件.parent().map(|p| p.to_path_buf());
+                let 需要延後複製 = match &目標所在目錄 {
+                    Some(tgt) => {
+                        自身所在目錄
+                            .as_ref()
+                            .map(|p| 路徑相同(p, tgt))
+                            .unwrap_or(false)
+                            || 當前工作目錄
+                                .as_ref()
+                                .map(|p| 路徑相同(p, tgt))
+                                .unwrap_or(false)
                     }
-                    _ => {}
-                }
-                match (舊哈希, 新哈希) {
-                    (Some(舊), Some(新)) if 舊 == 新 => {
-                        println!(" 中州韻引擎 '{}' 看起來未變 (哈希相同)", &目標庫文件.display());
+                    None => false,
+                };
+                let 選項 = if 需要延後複製 {
+                    println!(" 檢測到當前程序與目標 rime.dll 在同一目錄，將在程序退出後替換 rime.dll 並重啓 Weasel。");
+                    提權複製選項 {
+                        隱藏窗口: true,
+                        等待完成: false,
+                        父進程: Some(std::process::id()),
+                        重啟服務: Some(小狼毫算法服務.clone()),
+                        驗證哈希: true,
                     }
-                    _ => {
-                        println!(" 中州韻引擎 '{}' 已更新", &目標庫文件.display());
+                } else {
+                    提權複製選項 {
+                        隱藏窗口: true,
+                        等待完成: true,
+                        父進程: None,
+                        重啟服務: None,
+                        驗證哈希: false,
                     }
+                };
+                if 需要延後複製 {
+                    執行提權複製腳本(&源庫文件, &目標庫文件, 選項)?;
+                    println!(" 已啓動提權延後複製流程，現在將退出當前程序以完成更新。");
+                    let mut input = String::new();
+                    println!(" 請按任意鍵退出...");
+                    let _ = std::io::stdin().read_line(&mut input);
+                    std::process::exit(0);
+                } else {
+                    let 舊哈希 = 文件_sha256(&目標庫文件).ok();
+                    執行提權複製腳本(&源庫文件, &目標庫文件, 選項)
+                        .map_err(|e| {
+                            eprintln!(" 無法複製文件到目標位置 '{}': {}", &目標庫文件.display(), e);
+                            e
+                        })?;
+                    let 源哈希 = 文件_sha256(&源庫文件).ok();
+                    let 新哈希 = 文件_sha256(&目標庫文件).ok();
+                    match (&源哈希, &新哈希) {
+                        (Some(源), Some(新)) if 源 != 新 => {
+                            eprintln!( " 文件複製失敗: 源與目標哈希不匹配 (源: {}, 目標: {})", 源, 新);
+                            println!(" 將在程序退出後嘗試延後替換並重啓 Weasel。");
+                            let 選項 = 提權複製選項 {
+                                隱藏窗口: true,
+                                等待完成: false,
+                                父進程: Some(std::process::id()),
+                                重啟服務: Some(小狼毫算法服務.clone()),
+                                驗證哈希: true,
+                            };
+                            執行提權複製腳本(&源庫文件, &目標庫文件, 選項)
+                                .map_err(|e| {
+                                    eprintln!(" 無法複製文件到目標位置 '{}': {}", &目標庫文件.display(), e);
+                                    e
+                                })?;
+                            println!(" 已啓動提權延後複製流程，請退出當前程序以完成更新。");
+                            return Ok(());
+                        }
+                        _ => {}
+                    }
+                    match (舊哈希, 新哈希) {
+                        (Some(舊), Some(新)) if 舊 == 新 => {
+                            println!(" 中州韻引擎 '{}' 看起來未變 (哈希相同)", &目標庫文件.display());
+                        }
+                        _ => {
+                            println!(" 中州韻引擎 '{}' 已更新", &目標庫文件.display());
+                        }
+                    }
+                    // 啓動小狼毫算法服務
+                    let _ = std::process::Command::new(&小狼毫算法服務)
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()?;
+                    println!(" 小狼毫服務 '{}' 已重啓", &小狼毫算法服務.display());
+                    // 刪除臨時目錄
+                    match std::fs::remove_dir_all(&目錄名) {
+                        Ok(_) => { println!(" 臨時目錄 '{}' 已刪除", &目錄名); },
+                        Err(e) => { anyhow::bail!(" 無法刪除目錄 '{}', {}", &目錄名, e); },
+                    }
+                    Ok(())
                 }
-                // 啓動小狼毫算法服務
-                let _ = std::process::Command::new(&小狼毫算法服務)
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .spawn()?;
-                println!(" 小狼毫服務 '{}' 已重啓", &小狼毫算法服務.display());
-                // 刪除臨時目錄
-                match std::fs::remove_dir_all(&目錄名) {
-                    Ok(_) => { println!(" 臨時目錄 '{}' 已刪除", &目錄名); },
-                    Err(e) => { anyhow::bail!(" 無法刪除目錄 '{}', {}", &目錄名, e); },
-                }
-                Ok(())
             } else {
                 anyhow::bail!("WeaselServer.exe 未找到.");
             }
