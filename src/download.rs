@@ -56,7 +56,9 @@ use std::path::PathBuf;
 pub fn 同步rppi索引(參數: &下載參數) -> anyhow::Result<PathBuf> {
     let 代理 = 參數.代理地址();
     let 倉庫域名 = 參數.倉庫域名().unwrap_or("github.com");
-    let 本地路徑 = PathBuf::from("pkg").join("rime").join("rppi");
+    let 家目錄 = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    let 配置目錄 = PathBuf::from(家目錄.unwrap()).join(".rime-cli").join("pkg");
+    let 本地路徑 = 配置目錄.join("rime").join("rppi");
     let 網址 = format!("https://{}/rime/rppi.git", 倉庫域名);
     println!("同步 rime/rppi 倉庫到本地: {}", 本地路徑.display());
     if 本地路徑.exists() {

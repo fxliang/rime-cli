@@ -26,9 +26,9 @@ impl 配方包<'_> {
     }
 
     pub fn 本地路徑(&self) -> PathBuf {
-        ["pkg", self.配方.方家.as_str(), self.配方.名字.as_str()]
-            .iter()
-            .collect()
+        let 家目錄 = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+        let 配置目錄 = PathBuf::from(家目錄.unwrap()).join(".rime-cli").join("pkg");
+        配置目錄.join(&self.配方.方家).join(&self.配方.名字)
     }
 
     pub fn 按倉庫分組<'a>(
