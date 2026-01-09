@@ -635,7 +635,7 @@ mod tui {
                     } else {
                         return Ok(None);
                     }
-                },
+                }
                 Some(idx) => match 條目列表.get(idx).unwrap_or(&Rppi菜單條目::取消) {
                     Rppi菜單條目::分類 { key } => {
                         if let Some(next) = 當前.children.get(key) {
