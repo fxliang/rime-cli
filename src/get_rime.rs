@@ -160,13 +160,23 @@ fn 下載並更新引擎庫(附件: &附件信息, 域名: String, 代理: Optio
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
 
+    let 家目錄 = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    let 緩存目錄 = if let Some(家) = 家目錄 {
+        let mut 路徑 = PathBuf::from(家);
+        路徑.push(".rime-cli");
+        std::fs::create_dir_all(&路徑).ok();
+        路徑
+    } else {
+        PathBuf::from(".")
+    };
     // 若本地已存在且sha256匹配，直接使用
-    let 本地文件路徑 = PathBuf::from(&文件名);
+    let 本地文件路徑 = 緩存目錄.join(&文件名);
+    println!(" 下載文件到緩存目錄: '{}'", 本地文件路徑.display());
     if 本地文件路徑.exists() {
         match 驗證文件哈希(&本地文件路徑, &附件.檢驗碼) {
             Ok(true) => {
                 println!(" '{}' 已存在且校驗碼匹配，跳過下載。", 文件名);
-                return 解壓並更新引擎(&文件名);
+                return 解壓並更新引擎(&本地文件路徑.to_string_lossy().to_string());
             }
             Ok(false) => {
                 println!(" '{}' 已存在但校驗碼不符，重新下載。", 文件名);
@@ -185,7 +195,7 @@ fn 下載並更新引擎庫(附件: &附件信息, 域名: String, 代理: Optio
         .progress_chars("█>-"),
     );
     // 創建文件
-    let mut 目標文件 = match File::create(&文件名) {
+    let mut 目標文件 = match File::create(&本地文件路徑) {
         Ok(f) => f,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::AlreadyExists {
@@ -226,7 +236,7 @@ fn 下載並更新引擎庫(附件: &附件信息, 域名: String, 代理: Optio
     println!();
     // 下載完成後驗證sha256
     if 驗證文件哈希(&本地文件路徑, &附件.檢驗碼)? {
-        解壓並更新引擎(&文件名)
+        解壓並更新引擎(&本地文件路徑.to_string_lossy().to_string())
     } else {
         anyhow::bail!(format!("'{}' 下載後校驗碼不匹配，請重試。", 文件名))
     }
