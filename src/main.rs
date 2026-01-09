@@ -17,7 +17,6 @@ use rime_levers::{
     加入輸入方案列表, 測試輸入法固件, 製備輸入法固件, 設置引擎構建與整備參數, 選擇輸入方案,
     配置補丁,
 };
-// rppi_parser crate is a workspace dependency
 
 #[derive(Debug, StructOpt)]
 pub struct 場地參數 {
@@ -186,8 +185,19 @@ fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Re
             if !不下載 {
                 下載配方包(&衆配方, &場地.下載根目錄(), &下載參數)?;
             }
+            #[cfg(windows)]
+            let 默認用戶數據目錄 = get_rime::視窗組件::默認用戶目錄();
+            #[cfg(windows)]
+            let 用戶數據目錄 = get_rime::視窗組件::用戶目錄()
+                .or(默認用戶數據目錄)
+                .map(PathBuf::from);
+            #[cfg(not(windows))]
+            let 用戶數據目錄 = get_rime::用戶目錄().map(PathBuf::from);
             for 配方 in &衆配方 {
                 安裝配方(配方, &場地.下載根目錄(), &場地.源碼場地, &場地.整備場地)?;
+                if let Some(用戶目錄) = &用戶數據目錄 {
+                    install::安裝配方到用戶目錄(配方, &場地.下載根目錄(), 用戶目錄)?;
+                }
             }
         }
         子命令::Patch { config, key, value } => {
@@ -306,7 +316,7 @@ mod tui {
             }
             let 選項 = vec![
                 "下載配方".to_string(),
-                "安裝配方(未實現)".to_string(),
+                "安裝配方".to_string(),
                 "更新引擎庫".to_string(),
                 "選擇輸入方案".to_string(),
                 "加入輸入方案列表".to_string(),

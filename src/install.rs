@@ -79,6 +79,44 @@ pub fn 安裝配方(
     Ok(())
 }
 
+pub fn 安裝配方到用戶目錄(
+    配方: &配方名片,
+    下載場地: &Path,
+    用戶目錄: &Path,
+) -> anyhow::Result<()> {
+    let 包 = 配方包 {
+        配方: 配方.clone(),
+        倉庫域名: None,
+    };
+    let 本地倉庫 = 包.本地路徑(下載場地);
+    if !本地倉庫.exists() {
+        bail!("找不到配方包本地倉庫: {}", 本地倉庫.display());
+    }
+    檢出倉庫分支(&本地倉庫, 包.倉庫分支())?;
+    fs::create_dir_all(用戶目錄)?;
+    for item in fs::read_dir(&本地倉庫)? {
+        let item = item?;
+        let name = item.file_name();
+        if name.to_string_lossy().starts_with('.')
+            || name.to_string_lossy().eq_ignore_ascii_case("readme.md")
+            || name
+                .to_string_lossy()
+                .to_ascii_lowercase()
+                .starts_with("license")
+        {
+            continue;
+        }
+        let source = item.path();
+        let target = 用戶目錄.join(name);
+        if item.file_type()?.is_dir() {
+            遞歸複製目錄(&source, &target)?;
+        } else if item.file_type()?.is_file() {
+            fs::copy(source, target)?;
+        }
+    }
+    Ok(())
+}
+
 fn 是編譯期源文件(文件名: &str) -> bool {
     if 文件名.ends_with(".yaml") {
         // 仿照 rime/plum：排除 *.custom.yaml 與 *.recipe.yaml
