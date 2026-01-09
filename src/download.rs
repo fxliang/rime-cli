@@ -39,6 +39,7 @@ pub fn 下載配方包(
     下載場地: &Path,
     參數: &下載參數,
 ) -> anyhow::Result<()> {
+    std::fs::create_dir_all(下載場地)?;
     let 代理 = 參數.代理地址();
     for (包名, 一組配方包) in 配方包::按倉庫分組(衆配方, 參數.倉庫域名()) {
         let 首包 = 一組配方包.first().ok_or(anyhow!("至少應有一個配方包"))?;
@@ -78,6 +79,7 @@ use std::path::PathBuf;
 /// 確保本地存在最新的 rime/rppi 倉庫並返回本地路徑。
 #[cfg(feature = "tui")]
 pub fn 同步rppi索引(參數: &下載參數, 下載場地: &Path) -> anyhow::Result<PathBuf> {
+    std::fs::create_dir_all(下載場地)?;
     let 代理 = 參數.代理地址();
     let 倉庫域名 = 參數.倉庫域名().unwrap_or("github.com");
     let 本地路徑 = 下載場地.join("rime").join("rppi");

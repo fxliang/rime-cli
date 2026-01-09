@@ -51,6 +51,18 @@ pub struct 場地參數 {
     pub 目標場地: PathBuf,
 }
 
+impl 場地參數 {
+    fn 下載根目錄(&self) -> PathBuf {
+        if self.下載場地 == PathBuf::from("pkg") {
+            if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
+            {
+                return PathBuf::from(home).join(".rime-cli").join("pkg");
+            }
+        }
+        self.下載場地.clone()
+    }
+}
+
 #[derive(Debug, StructOpt)]
 #[structopt(about = "Rime 配方管理器")]
 struct Cli {
@@ -160,7 +172,7 @@ fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Re
                 .iter()
                 .map(|rx| 配方名片::from(rx.as_str()))
                 .collect::<Vec<_>>();
-            下載配方包(&衆配方, &場地.下載場地, &下載參數)?;
+            下載配方包(&衆配方, &場地.下載根目錄(), &下載參數)?;
         }
         子命令::Install {
             不下載,
@@ -172,10 +184,10 @@ fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Re
                 .map(|rx| 配方名片::from(rx.as_str()))
                 .collect::<Vec<_>>();
             if !不下載 {
-                下載配方包(&衆配方, &場地.下載場地, &下載參數)?;
+                下載配方包(&衆配方, &場地.下載根目錄(), &下載參數)?;
             }
             for 配方 in &衆配方 {
-                安裝配方(配方, &場地.下載場地, &場地.源碼場地, &場地.整備場地)?;
+                安裝配方(配方, &場地.下載根目錄(), &場地.源碼場地, &場地.整備場地)?;
             }
         }
         子命令::Patch { config, key, value } => {
@@ -566,7 +578,7 @@ mod tui {
         let rppi目錄 = if let Some(已拉取) = rppi索引 {
             已拉取.clone()
         } else {
-            let 拉取路徑 = 同步rppi索引(&參數, &場地.下載場地)?;
+            let 拉取路徑 = 同步rppi索引(&參數, &場地.下載根目錄())?;
             *rppi索引 = Some(拉取路徑.clone());
             拉取路徑
         };

@@ -437,7 +437,10 @@ $dest='{dest}'; \
     };
     let wait_flag = if 選項.等待完成 { " -Wait" } else { "" };
     // 如果目標路徑不需要提權，則不需要提權啟動
-    let 需要提權 = 目標.metadata().map(|m| m.permissions().readonly()).unwrap_or(true);
+    let 需要提權 = 目標
+        .metadata()
+        .map(|m| m.permissions().readonly())
+        .unwrap_or(true);
     let 提權命令 = if 需要提權 {
         format!(
             "Start-Process -FilePath '{ps}' -Verb RunAs {window}-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','{script}'{wait}",
