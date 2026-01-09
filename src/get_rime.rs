@@ -243,7 +243,7 @@ fn 下載並更新引擎庫(附件: &附件信息, 域名: String, 代理: Optio
 }
 
 #[cfg(windows)]
-mod 視窗組件 {
+pub mod 視窗組件 {
     use windows::Win32::System::SystemInformation::{
         GetNativeSystemInfo, PROCESSOR_ARCHITECTURE, PROCESSOR_ARCHITECTURE_AMD64, PROCESSOR_ARCHITECTURE_ARM64, SYSTEM_INFO
     };
@@ -287,6 +287,24 @@ mod 視窗組件 {
             .open_subkey(註冊表路徑)
             .and_then(|注冊表鍵| 注冊表鍵.get_value("WeaselRoot"))
             .ok()
+    }
+
+    pub fn 用戶目錄() -> Option<String> {
+        let 註冊表路徑 = OsStr::new("SOFTWARE\\Rime\\Weasel");
+        RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
+            .open_subkey(註冊表路徑)
+            .and_then(|注冊表鍵| 注冊表鍵.get_value("RimeUserDir"))
+            .ok()
+    }
+
+    pub fn 默認用戶目錄() -> Option<String> {
+        if let Some(家目錄) = std::env::var_os("USERPROFILE") {
+            let mut 路徑 = std::path::PathBuf::from(家目錄);
+            路徑.push("AppData\\Roaming\\Rime");
+            Some(路徑.to_string_lossy().to_string())
+        } else {
+            None
+        }
     }
 
 }
@@ -562,6 +580,23 @@ fn 解壓並更新引擎(文件名: &String) -> anyhow::Result<()>{
             }
         },
         None => { anyhow::bail!("WeaselRoot 未成功讀取."); }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn 用戶目錄() -> Option<String> {
+    // macOS 下，鼠須管的用戶目錄通常在 ~/Library/Rime
+    #[cfg(target_os = "macos")] {
+        if let Some(家目錄) = std::env::var_os("HOME") {
+            let mut 路徑 = std::path::PathBuf::from(家目錄);
+            路徑.push("Library/Rime");
+            Some(路徑.to_string_lossy().to_string())
+        } else {
+            None
+        }
+    }
+    #[cfg(not(target_os = "macos"))] {
+        None
     }
 }
 
