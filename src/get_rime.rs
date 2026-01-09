@@ -263,6 +263,72 @@ mod 視窗組件 {
 }
 
 #[cfg(windows)]
+fn 使用提權腳本複製(來源: &Path, 目標: &Path) -> anyhow::Result<()> {
+    use std::{env, process::Command};
+    // 先確保來源存在，避免白跑提權
+    if !來源.exists() {
+        anyhow::bail!(format!("源文件不存在: {}", 來源.display()));
+    }
+    fn 查找_powershell() -> Option<PathBuf> {
+        let mut 候選: Vec<PathBuf> = Vec::new();
+        if let Some(root) = env::var_os("SystemRoot") {
+            let mut p = PathBuf::from(root);
+            p.push("System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+            候選.push(p);
+        }
+        候選.push(PathBuf::from("powershell.exe"));
+        候選.push(PathBuf::from("pwsh.exe"));
+        if let Some(path_var) = env::var_os("PATH") {
+            for dir in env::split_paths(&path_var) {
+                候選.push(dir.join("powershell.exe"));
+                候選.push(dir.join("pwsh.exe"));
+            }
+        }
+        候選.into_iter().find(|p| p.is_file())
+    }
+    let ps = 查找_powershell().ok_or_else(|| anyhow::anyhow!("未找到 PowerShell，可手動複製 rime.dll"))?;
+    let ps_cmd = ps.to_string_lossy().replace("'", "''");
+    // 構造內層腳本，直接通過 -Command 傳遞，避免落地 ps1
+    // 單引號要雙寫以避免在外層引號中斷
+    // 使用絕對路徑傳給提權的 PowerShell，避免工作目錄不同導致找不到文件
+    let 來源路徑 = 來源.canonicalize()
+        .unwrap_or_else(|_| 來源.to_path_buf())
+        .to_string_lossy()
+        .replace("'", "''");
+    let 目標路徑 = 目標.to_string_lossy().replace("'", "''");
+    let 內層腳本 = format!(
+        "\
+$ErrorActionPreference = 'Stop'; \
+$source = '{source}'; \
+$dest = '{dest}'; \
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null; \
+Copy-Item -LiteralPath $source -Destination $dest -Force; \
+Write-Host \"Source: $source\"; \
+Write-Host \"Dest:   $dest\"; \
+if (Test-Path $dest) {{ Write-Host 'Copy succeeded.' }} else {{ Write-Host 'Copy failed.' }};",
+        source = 來源路徑,
+        dest = 目標路徑,
+    );
+    // 再次把單引號變成兩個單引號，供 Start-Process 的 -ArgumentList 單引號包裹
+    let 內層腳本_轉義 = 內層腳本.replace("'", "''");
+    let 提權命令 = format!(
+        "Start-Process -FilePath '{ps}' -Verb RunAs -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','{script}' -Wait",
+        ps = ps_cmd,
+        script = 內層腳本_轉義,
+    );
+    let 狀態 = Command::new(&ps)
+        .arg("-NoProfile")
+        .arg("-ExecutionPolicy").arg("Bypass")
+        .arg("-Command").arg(提權命令)
+        .status()?;
+
+    if !狀態.success() {
+        anyhow::bail!("提權複製腳本執行失敗，請允許提權或手動複製。");
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
 fn 解壓並更新引擎(文件名: &String) -> anyhow::Result<()>{
     match 視窗組件::獲取小狼毫程序目錄() {
         Some(小狼毫根目錄) => {
@@ -281,10 +347,30 @@ fn 解壓並更新引擎(文件名: &String) -> anyhow::Result<()>{
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 println!(" 小狼毫服務 '{}' 已退出", &小狼毫算法服務.display());
                 let 目標庫文件 = Path::new(&小狼毫根目錄).join("rime.dll");
-                // 複製新文件
-                match std::fs::copy(Path::new(&目錄名.as_str()).join("dist/lib/rime.dll"), &目標庫文件) {
-                    Ok(_) => { println!(" 中州韻引擎 '{}' 已更新", &目標庫文件.display()) },
-                    Err(e) => { eprintln!("複製文件時發生錯誤: {}", e) }
+                let 源庫文件 = Path::new(&目錄名.as_str()).join("dist/lib/rime.dll");
+                let 源庫文件 = std::fs::canonicalize(&源庫文件)
+                    .map_err(|_| anyhow::anyhow!(format!("源文件不存在: {}", 源庫文件.display())))?;
+                let 舊哈希 = 文件_sha256(&目標庫文件).ok();
+                使用提權腳本複製(&源庫文件, &目標庫文件)
+                    .map_err(|e| {
+                        eprintln!(" 無法複製文件到目標位置 '{}': {}", &目標庫文件.display(), e);
+                        e
+                    })?;
+                let 源哈希 = 文件_sha256(&源庫文件).ok();
+                let 新哈希 = 文件_sha256(&目標庫文件).ok();
+                match (&源哈希, &新哈希) {
+                    (Some(源), Some(新)) if 源 != 新 => {
+                        anyhow::bail!(format!("文件複製失敗: 源文件和目標文件哈希不匹配."));
+                    }
+                    _ => {}
+                }
+                match (舊哈希, 新哈希) {
+                    (Some(舊), Some(新)) if 舊 == 新 => {
+                        println!(" 中州韻引擎 '{}' 看起來未變 (哈希相同)", &目標庫文件.display());
+                    }
+                    _ => {
+                        println!(" 中州韻引擎 '{}' 已更新", &目標庫文件.display());
+                    }
                 }
                 // 啓動小狼毫算法服務
                 let _ = std::process::Command::new(&小狼毫算法服務)
