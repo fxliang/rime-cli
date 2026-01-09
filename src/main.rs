@@ -248,7 +248,7 @@ mod tui {
             }
             let 選項 = vec![
                 "下載配方".to_string(),
-                "安裝配方".to_string(),
+                "安裝配方(未實現)".to_string(),
                 "更新引擎庫".to_string(),
                 "選擇輸入方案".to_string(),
                 "加入輸入方案列表".to_string(),
