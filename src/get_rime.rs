@@ -326,7 +326,28 @@ if ($srcHash -ne $dstHash) { throw \"hash mismatch src=$srcHash dst=$dstHash\" }
 
     let 重啟服務腳本 = if let Some(svc) = 選項.重啟服務 {
         let svc_path = svc.to_string_lossy().replace("'", "''");
-        format!(" if (Test-Path '{svc}') {{ Start-Process -FilePath '{svc}' -WindowStyle Hidden | Out-Null }};", svc = svc_path)
+        // 隐藏启动 WeaselServer，短等待后检测进程是否存在，若不存在则改为可见模式重试；同时在同目录执行 WeaselDeployer.exe /deploy（若存在）。
+        format!(
+            " if (Test-Path '{svc}') {{ \n\
+                $dir = Split-Path -Parent '{svc}'; \n\
+                $name = [System.IO.Path]::GetFileNameWithoutExtension('{svc}'); \n\
+                Start-Process -FilePath '{svc}' -WorkingDirectory $dir -WindowStyle Hidden | Out-Null; \n\
+                Start-Sleep -Milliseconds 500; \n\
+                if (-not (Get-Process -Name $name -ErrorAction SilentlyContinue)) {{ \n\
+                    Start-Process -FilePath '{svc}' -WorkingDirectory $dir -WindowStyle Normal | Out-Null; \n\
+                }}; \n\
+                $deployer = Join-Path $dir 'WeaselDeployer.exe'; \n\
+                if (Test-Path $deployer) {{ \n\
+                    $psi = New-Object System.Diagnostics.ProcessStartInfo; \n\
+                    $psi.FileName = $deployer; \n\
+                    $psi.Arguments = '/deploy'; \n\
+                    $psi.WorkingDirectory = $dir; \n\
+                    $proc = [System.Diagnostics.Process]::Start($psi); \n\
+                    if ($proc) {{ $proc.WaitForExit(); }} \n\
+                }}; \n\
+            }};",
+            svc = svc_path,
+        )
     } else {
         "".to_string()
     };
@@ -353,14 +374,24 @@ $dest='{dest}'; \
     let ps_cmd = ps.to_string_lossy().replace("'", "''");
     let window_flag = if 選項.隱藏窗口 { "-WindowStyle Hidden " } else { "" };
     let wait_flag = if 選項.等待完成 { " -Wait" } else { "" };
-
-    let 提權命令 = format!(
-        "Start-Process -FilePath '{ps}' -Verb RunAs {window}-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','{script}'{wait}",
-        ps = ps_cmd,
-        window = window_flag,
-        script = 內層腳本_轉義,
-        wait = wait_flag,
-    );
+    // 如果目標路徑不需要提權，則不需要提權啟動
+    let 需要提權 = 目標.metadata().map(|m| m.permissions().readonly()).unwrap_or(true);
+    let 提權命令 = if 需要提權 {
+        format!(
+            "Start-Process -FilePath '{ps}' -Verb RunAs {window}-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','{script}'{wait}",
+            ps = ps_cmd,
+            window = window_flag,
+            script = 內層腳本_轉義,
+            wait = wait_flag,
+        )
+    } else {
+        // 不需要提權，直接執行 PowerShell 命令
+        format!(
+            "& '{ps}' -NoProfile -ExecutionPolicy Bypass -Command '{script}'",
+            ps = ps_cmd,
+            script = 內層腳本_轉義,
+        )
+    };
 
     if 選項.等待完成 {
         let 狀態 = Command::new(&ps)
@@ -497,6 +528,18 @@ fn 解壓並更新引擎(文件名: &String) -> anyhow::Result<()>{
                         .stderr(std::process::Stdio::null())
                         .spawn()?;
                     println!(" 小狼毫服務 '{}' 已重啓", &小狼毫算法服務.display());
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    // 在運行算法服務同目錄下的WeaselDeployer.exe執行/deploy參數
+                    let 小狼毫部署器 = Path::new(&小狼毫根目錄).join("WeaselDeployer.exe");
+                    if 小狼毫部署器.exists() {
+                        let _ = std::process::Command::new(&小狼毫部署器)
+                            .arg("/deploy")
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .spawn()?
+                            .wait()?;
+                        println!(" 小狼毫部署器 '{}' 已執行 /deploy", &小狼毫部署器.display());
+                    }
                     // 刪除臨時目錄
                     match std::fs::remove_dir_all(&目錄名) {
                         Ok(_) => { println!(" 臨時目錄 '{}' 已刪除", &目錄名); },
