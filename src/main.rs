@@ -282,7 +282,7 @@ mod tui {
                     false
                 }
                 Some(2) => {
-                    let tag = match 讀取可取消("版本標籤 (留空使用最新)", &主題)? {
+                    let tag = match 讀取可取消("版本標籤 (留空使用最新, 輸入q或c回車退出)", &主題)? {
                         Some(t) => t,
                         None => continue 'tui,
                     };
@@ -294,7 +294,7 @@ mod tui {
                     false
                 }
                 Some(3) => {
-                    let Some(schema) = 讀取可取消("選擇的輸入方案", &主題)? else {
+                    let Some(schema) = 讀取可取消("選擇的輸入方案 (輸入q或c回車退出)", &主題)? else {
                         continue 'tui;
                     };
                     if !schema.trim().is_empty() {
@@ -307,7 +307,7 @@ mod tui {
                     false
                 }
                 Some(4) => {
-                    let Some(輸入) = 讀取可取消("要加入的輸入方案 (空格分隔)", &主題)? else {
+                    let Some(輸入) = 讀取可取消("要加入的輸入方案 (空格分隔), 輸入q或c回車退出", &主題)? else {
                         continue 'tui;
                     };
                     let 方案 = 輸入
@@ -394,8 +394,8 @@ mod tui {
         match 來源 {
             配方選擇來源::手動 => {
                 let 提示 = match 操作 {
-                    配方操作::Download => "要下載的配方 (空格分隔)",
-                    配方操作::Install => "要安裝的配方 (空格分隔)",
+                    配方操作::Download => "要下載的配方 (空格分隔，輸入q或c回車退出)",
+                    配方操作::Install => "要安裝的配方 (空格分隔，輸入q或c回車退出)",
                 };
                 let Some(輸入) = 讀取可取消(提示, 主題)? else {
                     return Ok(None);
