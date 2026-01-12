@@ -141,74 +141,69 @@ mod tests {
     use super::*;
 
     use claims::assert_ok;
-    use lazy_static::lazy_static;
     use std::fs::{read_to_string, write};
-    use std::sync::{Once, RwLock};
+    use std::sync::RwLock;
 
-    lazy_static! {
-        static ref 公共測試場地: PathBuf = std::env::temp_dir().join("rime_levers_tests");
+    fn 獲取公共測試場地() -> PathBuf {
+        std::env::temp_dir().join("rime_levers_tests")
     }
-    // 公共測試場地只需在各項測試開始之前清理一次.
-    static 預備公共測試場地: Once = Once::new();
+
     // rime::Deployer 是個單例, 同一時刻只能服務一片場地.
     // 公共場地中的測試可以並發執行, 持讀鎖. 專用場地的測試持寫鎖.
     static 佔用引擎機位: RwLock<()> = RwLock::new(());
 
-    fn 預備() {
-        預備公共測試場地.call_once(|| {
-            if 公共測試場地.exists() {
-                assert_ok!(std::fs::remove_dir_all(&*公共測試場地));
-            }
-        });
-        assert_ok!(設置引擎啓動參數(&公共測試場地));
+    fn 預備(場地: &PathBuf) {
+        if 場地.exists() {
+            std::fs::remove_dir_all(場地).unwrap();
+        }
+        assert_ok!(設置引擎啓動參數(場地));
     }
 
     #[test]
     fn 測試配置補丁_全局配置() {
-        let _佔 = 佔用引擎機位.read().unwrap();
-        預備();
+        let _佔 = 佔用引擎機位.write().unwrap_or_else(|e| e.into_inner());
+        let 場地 = 獲取公共測試場地();
+        預備(&場地);
         assert_ok!(配置補丁("default", "menu/page_size", "5"));
 
-        let 結果文件 = 公共測試場地.join("default.custom.yaml");
+        let 結果文件 = 場地.join("default.custom.yaml");
         let 補丁文件內容 = assert_ok!(read_to_string(&結果文件));
-        assert!(補丁文件內容.contains(
-            r#"
-patch:
+        assert!(補丁文件內容.replace('\r', "").contains(
+            r#"patch:
   "menu/page_size": 5"#
         ));
     }
 
     #[test]
     fn 測試配置補丁_輸入方案() {
-        let _佔 = 佔用引擎機位.read().unwrap();
-        預備();
+        let _佔 = 佔用引擎機位.write().unwrap_or_else(|e| e.into_inner());
+        let 場地 = 獲取公共測試場地();
+        預備(&場地);
         assert_ok!(配置補丁("ohmyrime.schema", "menu/page_size", "9"));
 
-        let 結果文件 = 公共測試場地.join("ohmyrime.custom.yaml");
+        let 結果文件 = 場地.join("ohmyrime.custom.yaml");
         let 補丁文件內容 = assert_ok!(read_to_string(&結果文件));
-        assert!(補丁文件內容.contains(
-            r#"
-patch:
+        assert!(補丁文件內容.replace('\r', "").contains(
+            r#"patch:
   "menu/page_size": 9"#
         ));
     }
 
     #[test]
     fn 測試配置補丁_列表值() {
-        let _佔 = 佔用引擎機位.read().unwrap();
-        預備();
+        let _佔 = 佔用引擎機位.write().unwrap_or_else(|e| e.into_inner());
+        let 場地 = 獲取公共測試場地();
+        預備(&場地);
         assert_ok!(配置補丁(
             "patch_list",
             "starcraft/races",
             r#"[protoss, terran, zerg]"#
         ));
 
-        let 結果文件 = 公共測試場地.join("patch_list.custom.yaml");
+        let 結果文件 = 場地.join("patch_list.custom.yaml");
         let 補丁文件內容 = assert_ok!(read_to_string(&結果文件));
-        println!("補丁文件內容: {}", 補丁文件內容);
-        assert!(補丁文件內容.contains(
-            r#"
-patch:
+        assert!(補丁文件內容.replace('\r', "").contains(
+            r#"patch:
   "starcraft/races":
     - protoss
     - terran
@@ -218,19 +213,19 @@ patch:
 
     #[test]
     fn 測試配置補丁_字典值() {
-        let _佔 = 佔用引擎機位.read().unwrap();
-        預備();
+        let _佔 = 佔用引擎機位.write().unwrap_or_else(|e| e.into_inner());
+        let 場地 = 獲取公共測試場地();
+        預備(&場地);
         assert_ok!(配置補丁(
             "patch_map",
             "starcraft/workers",
             r#"{protoss: probe, terran: scv, zerg: drone}"#
         ));
 
-        let 結果文件 = 公共測試場地.join("patch_map.custom.yaml");
+        let 結果文件 = 場地.join("patch_map.custom.yaml");
         let 補丁文件內容 = assert_ok!(read_to_string(&結果文件));
-        assert!(補丁文件內容.contains(
-            r#"
-patch:
+        assert!(補丁文件內容.replace('\r', "").contains(
+            r#"patch:
   "starcraft/workers":
     protoss: probe
     terran: scv
@@ -240,7 +235,7 @@ patch:
 
     #[test]
     fn 測試製備輸入法固件() {
-        let _佔 = 佔用引擎機位.write().unwrap();
+        let _佔 = 佔用引擎機位.write().unwrap_or_else(|e| e.into_inner());
         let 專用測試場地 = std::env::temp_dir().join("rime_levers_tests_build");
         if 專用測試場地.exists() {
             assert_ok!(std::fs::remove_dir_all(&專用測試場地));
@@ -268,23 +263,21 @@ schema:
         let 整備區 = 專用測試場地.join("build");
         let 默認配置文件 = 整備區.join("default.yaml");
         let 默認配置內容 = assert_ok!(read_to_string(&默認配置文件));
-        assert!(默認配置內容.contains(
-            r#"
-schema_list:
+        assert!(默認配置內容.replace('\r', "").contains(
+            r#"schema_list:
   - schema: ohmyrime"#
         ));
         let 輸入方案文件 = 整備區.join("ohmyrime.schema.yaml");
         let 輸入方案內容 = assert_ok!(read_to_string(&輸入方案文件));
-        assert!(輸入方案內容.contains(
-            r#"
-schema:
+        assert!(輸入方案內容.replace('\r', "").contains(
+            r#"schema:
   schema_id: ohmyrime"#
         ));
     }
 
     #[test]
     fn 測試加入輸入方案列表() {
-        let _佔 = 佔用引擎機位.write().unwrap();
+        let _佔 = 佔用引擎機位.write().unwrap_or_else(|e| e.into_inner());
         let 專用測試場地 = std::env::temp_dir().join("rime_levers_tests_add");
         if 專用測試場地.exists() {
             assert_ok!(std::fs::remove_dir_all(&專用測試場地));
@@ -297,7 +290,7 @@ schema:
         let 自定義配置 = 專用測試場地.join("default.custom.yaml");
         assert!(自定義配置.exists());
         let 自定義配置內容 = assert_ok!(read_to_string(&自定義配置));
-        assert!(自定義配置內容.contains(
+        assert!(自定義配置內容.replace('\r', "").contains(
             r#"patch:
   schema_list:
     - {schema: protoss}
@@ -307,7 +300,7 @@ schema:
         let 新增輸入方案 = vec!["terran".to_owned(), "zerg".to_owned()];
         assert_ok!(加入輸入方案列表(&新增輸入方案));
         let 自定義配置內容 = assert_ok!(read_to_string(&自定義配置));
-        assert!(自定義配置內容.contains(
+        assert!(自定義配置內容.replace('\r', "").contains(
             r#"patch:
   schema_list:
     - {schema: protoss}
@@ -318,7 +311,7 @@ schema:
 
     #[test]
     fn 測試選擇輸入方案() {
-        let _佔 = 佔用引擎機位.write().unwrap();
+        let _佔 = 佔用引擎機位.write().unwrap_or_else(|e| e.into_inner());
         let 專用測試場地 = std::env::temp_dir().join("rime_levers_tests_select");
         if 專用測試場地.exists() {
             assert_ok!(std::fs::remove_dir_all(&專用測試場地));
@@ -331,7 +324,7 @@ schema:
         let 用戶配置 = 專用測試場地.join("user.yaml");
         assert!(用戶配置.exists());
         let 用戶配置內容 = assert_ok!(read_to_string(&用戶配置));
-        assert!(用戶配置內容.contains(
+        assert!(用戶配置內容.replace('\r', "").contains(
             r#"var:
   previously_selected_schema: protoss"#
         ));
@@ -340,7 +333,7 @@ schema:
         assert_ok!(選擇輸入方案(boxer_之選));
 
         let 用戶配置內容 = assert_ok!(read_to_string(&用戶配置));
-        assert!(用戶配置內容.contains(
+        assert!(用戶配置內容.replace('\r', "").contains(
             r#"var:
   previously_selected_schema: terran"#
         ));
