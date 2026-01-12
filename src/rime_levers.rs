@@ -225,11 +225,7 @@ pub fn 從方案列表中刪除(衆輸入方案: &[String]) -> anyhow::Result<()
     rime_api_call!(deployer_initialize, std::ptr::null_mut());
     let mut 自訂配置: RimeConfig = rime_struct_new!();
     let 默認配置的自訂〇 = CString::new("default.custom")?;
-    rime_api_call!(
-        user_config_open,
-        默認配置的自訂〇.as_ptr(),
-        &mut 自訂配置
-    );
+    rime_api_call!(user_config_open, 默認配置的自訂〇.as_ptr(), &mut 自訂配置);
     // 取得已有方案列表
     let 方案列表〇 = CString::new("patch/schema_list")?;
     let 既有方案數 = rime_api_call!(config_list_size, &mut 自訂配置, 方案列表〇.as_ptr()) as u64;
@@ -238,10 +234,12 @@ pub fn 從方案列表中刪除(衆輸入方案: &[String]) -> anyhow::Result<()
         let 列表項〇 = CString::new(format!("patch/schema_list/@{}/schema", i))?;
         let 方案 = rime_api_call!(config_get_cstring, &mut 自訂配置, 列表項〇.as_ptr());
         if !方案.is_null() {
-            既有方案.push(unsafe { CStr::from_ptr(方案) }.to_str()? .to_owned());
+            既有方案.push(unsafe { CStr::from_ptr(方案) }.to_str()?.to_owned());
         }
     }
-    let 保留方案 = 既有方案.into_iter().filter(|方案| !衆輸入方案.contains(方案));
+    let 保留方案 = 既有方案
+        .into_iter()
+        .filter(|方案| !衆輸入方案.contains(方案));
 
     rime_api_call!(config_create_list, &mut 自訂配置, 方案列表〇.as_ptr());
     for (i, 方案) in 保留方案.enumerate() {
@@ -462,11 +460,7 @@ schema:
             assert_ok!(std::fs::remove_dir_all(&專用測試場地));
         }
         assert_ok!(設置引擎啓動參數(&專用測試場地));
-        let 初始輸入方案 = vec![
-            "protoss".to_owned(),
-            "terran".to_owned(),
-            "zerg".to_owned(),
-        ];
+        let 初始輸入方案 = vec!["protoss".to_owned(), "terran".to_owned(), "zerg".to_owned()];
         assert_ok!(加入輸入方案列表(&初始輸入方案));
         let 自訂配置檔案 = 專用測試場地.join("default.custom.yaml");
         assert!(自訂配置檔案.exists());
@@ -484,13 +478,10 @@ schema:
         rime_api_call!(deployer_initialize, std::ptr::null_mut());
         let mut 自訂配置: RimeConfig = rime_struct_new!();
         let 默認配置的自訂〇 = CString::new("default.custom").unwrap();
-        rime_api_call!(
-            user_config_open,
-            默認配置的自訂〇.as_ptr(),
-            &mut 自訂配置
-        );
+        rime_api_call!(user_config_open, 默認配置的自訂〇.as_ptr(), &mut 自訂配置);
         let 方案列表〇 = CString::new("patch/schema_list").unwrap();
-        let 既有方案數 = rime_api_call!(config_list_size, &mut 自訂配置, 方案列表〇.as_ptr()) as u64;
+        let 既有方案數 =
+            rime_api_call!(config_list_size, &mut 自訂配置, 方案列表〇.as_ptr()) as u64;
         assert_eq!(既有方案數, 1);
         rime_api_call!(config_close, &mut 自訂配置);
         rime_api_call!(finalize);
