@@ -1,5 +1,8 @@
 name: commit-ci
 
+permissions:
+  contents: write
+
 on:
   push:
     branches:
@@ -53,10 +56,8 @@ jobs:
         run: |
           cargo build --release --features=tui
 
-      # Test on Windows not ok yet
-      #- name: Test
-      #  run: |
-      #    cargo test --release
+      - name: Test
+        run: cargo test --release
 
       - name: Prepare package
         if: runner.os == 'Windows' || runner.os == 'macOS'
@@ -83,3 +84,32 @@ jobs:
         with:
           name: rime-cli-${{ runner.os }}
           path: rime-cli-${{ runner.os }}${{ runner.os == 'Windows' && '.7z' || '.tar.gz' }}
+
+  nightly-release:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rime-cli-macOS.tar.gz
+          path: ./artifacts/
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rime-cli-Windows.7z
+          path: ./artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          automatic_release_tag: latest
+          prerelease: true
+          title: Nightly Release ${{ github.sha }}
+          files: |
+            ./artifacts/rime-cli-macOS.tar.gz
+            ./artifacts/rime-cli-Windows.7z
+
