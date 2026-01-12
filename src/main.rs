@@ -12,7 +12,7 @@ use download::{下載參數, 下載配方包};
 use install::安裝配方;
 use recipe::配方名片;
 use rime_levers::{
-    加入輸入方案列表, 製備輸入法固件, 設置引擎啓動參數, 選擇輸入方案, 配置補丁
+    加入輸入方案列表, 製備輸入法固件, 設置引擎啓動參數, 選擇輸入方案, 配置補丁, 從方案列表中刪除
 };
 
 #[derive(Debug, StructOpt)]
@@ -27,6 +27,11 @@ enum 子命令 {
     /// 加入輸入方案列表
     Add {
         /// 要向列表中追加的輸入方案
+        schemata: Vec<String>,
+    },
+    /// 從方案列表中刪除
+    Remove {
+        /// 要從列表中刪除的輸入方案
         schemata: Vec<String>,
     },
     /// 構建輸入法固件
@@ -106,6 +111,11 @@ fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
             let 還不知道怎麼傳過來 = PathBuf::from(".");
             設置引擎啓動參數(&還不知道怎麼傳過來)?;
             加入輸入方案列表(&schemata)?;
+        }
+        子命令::Remove { schemata } => {
+            let 還不知道怎麼傳過來 = PathBuf::from(".");
+            設置引擎啓動參數(&還不知道怎麼傳過來)?;
+            從方案列表中刪除(&schemata)?;
         }
         子命令::Build => {
             let 還不知道怎麼傳過來 = PathBuf::from(".");
@@ -258,6 +268,7 @@ mod tui {
                 "更新引擎庫".to_string(),
                 "選擇輸入方案".to_string(),
                 "加入輸入方案列表".to_string(),
+                "從方案列表中刪除".to_string(),
                 "配置補丁".to_string(),
                 "構建輸入法固件".to_string(),
                 format!("設置代理 ({})", proxy.as_deref().unwrap_or("未設置")),
@@ -322,6 +333,21 @@ mod tui {
                     false
                 }
                 Some(5) => {
+                    let Some(輸入) = 讀取可取消("要刪除的輸入方案 (空格分隔), 輸入q或c回車退出", &主題)? else {
+                        continue 'tui;
+                    };
+                    let 方案 = 輸入
+                        .split_whitespace()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>();
+                    if !方案.is_empty() {
+                        let mut args = vec!["remove".to_string()];
+                        args.extend(方案);
+                        狀態 = Some(執行tui命令參數(args, host.as_deref(), proxy.as_deref())?);
+                    }
+                    false
+                }
+                Some(6) => {
                     let config = match 讀取可取消("目標配置 (如 default)", &主題)? {
                         Some(c) => c,
                         None => continue 'tui,
@@ -343,11 +369,11 @@ mod tui {
                     }
                     false
                 }
-                Some(6) => {
+                Some(7) => {
                     狀態 = Some(執行tui命令參數(vec!["build".to_string()], host.as_deref(), proxy.as_deref())?);
                     false
                 }
-                Some(7) => {
+                Some(8) => {
                     let 輸入: String = Input::with_theme(&主題)
                         .with_prompt("Proxy (留空清除)")
                         .allow_empty(true)
@@ -357,7 +383,7 @@ mod tui {
                     保存tui配置(&配置)?;
                     false
                 }
-                Some(8) => {
+                Some(9) => {
                     let 輸入: String = Input::with_theme(&主題)
                         .with_prompt("Host (留空清除)")
                         .allow_empty(true)
