@@ -93,17 +93,17 @@ jobs:
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
-          name: rime-cli-macOS.tar.gz
+          name: rime-cli-macOS
           path: ./artifacts/
 
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
-          name: rime-cli-Windows.7z
+          name: rime-cli-Windows
           path: ./artifacts/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: marvinpinto/action-automatic-releases@latest
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           automatic_release_tag: latest
