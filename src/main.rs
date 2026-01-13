@@ -13,7 +13,7 @@ use download::{下載參數, 下載配方包};
 use install::安裝配方;
 use recipe::配方名片;
 use rime_levers::{
-    加入輸入方案列表, 製備輸入法固件, 設置引擎啓動參數, 選擇輸入方案, 配置補丁, 從方案列表中刪除
+    加入輸入方案列表, 製備輸入法固件, 設置引擎啓動參數, 選擇輸入方案, 配置補丁, 從方案列表中刪除, 引擎啓動參數
 };
 use client::{*};
 
@@ -110,19 +110,37 @@ fn main() -> anyhow::Result<()> {
 fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
     match 命令行參數 {
         子命令::Add { schemata } => {
-            let 還不知道怎麼傳過來 = PathBuf::from(".");
-            設置引擎啓動參數(&還不知道怎麼傳過來)?;
+            let 用戶數據目錄 = 用戶目錄().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+            let mut 參數 = 引擎啓動參數::新建(用戶數據目錄);
+            參數.共享數據場地 = 共享數據目錄().map(PathBuf::from);
+            設置引擎啓動參數(&參數)?;
             加入輸入方案列表(&schemata)?;
+            前端部署()?;
+            return Ok(())
         }
         子命令::Remove { schemata } => {
-            let 還不知道怎麼傳過來 = PathBuf::from(".");
-            設置引擎啓動參數(&還不知道怎麼傳過來)?;
+            let 用戶數據目錄 = 用戶目錄().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+            let mut 參數 = 引擎啓動參數::新建(用戶數據目錄);
+            參數.共享數據場地 = 共享數據目錄().map(PathBuf::from);
+            設置引擎啓動參數(&參數)?;
             從方案列表中刪除(&schemata)?;
+            前端部署()?;
+            return Ok(())
         }
         子命令::Build => {
-            let 還不知道怎麼傳過來 = PathBuf::from(".");
-            設置引擎啓動參數(&還不知道怎麼傳過來)?;
-            製備輸入法固件()?;
+            #[cfg(windows)]
+            {
+                前端部署()?;
+                return Ok(())
+            }
+            #[cfg(not(windows))]
+            {
+                let 用戶數據目錄 = 用戶目錄().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+                let mut 參數 = 引擎啓動參數::新建(用戶數據目錄);
+                參數.共享數據場地 = 共享數據目錄().map(PathBuf::from);
+                設置引擎啓動參數(&參數)?;
+                製備輸入法固件()?;
+            }
         }
         子命令::Download {
             recipes, 下載參數
@@ -141,17 +159,21 @@ fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
                 .map(|rx| 配方名片::from(rx.as_str()))
                 .collect::<Vec<_>>();
             下載配方包(&衆配方, 下載參數)?;
-            let 默認用户數據目錄 = 默認用戶目錄();
-            let 用戶數據目錄 = 用戶目錄().unwrap_or(默認用户數據目錄.unwrap());
+            let 用戶數據目錄 = 用戶目錄().unwrap_or(默認用戶目錄().unwrap());
 
             for 配方 in &衆配方 {
                 安裝配方(配方, &PathBuf::from(&用戶數據目錄))?;
             }
         }
         子命令::Patch { config, key, value } => {
-            let 還不知道怎麼傳過來 = PathBuf::from(".");
-            設置引擎啓動參數(&還不知道怎麼傳過來)?;
+            #[cfg(windows)]
+            let _ = Windows互斥鎖::new("WeaselDeployerMutex")?;
+            let 用戶數據目錄 = 用戶目錄().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+            let mut 參數 = 引擎啓動參數::新建(用戶數據目錄);
+            參數.共享數據場地 = 共享數據目錄().map(PathBuf::from);
+            設置引擎啓動參數(&參數)?;
             配置補丁(&config, &key, &value)?;
+            製備輸入法固件()?;
         }
         子命令::Select { schema } => {
             選擇輸入方案(&schema)?;

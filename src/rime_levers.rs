@@ -4,20 +4,95 @@ use rime::{
 };
 use std::ffi::{CStr, CString};
 use std::path::PathBuf;
+#[derive(Default)]
+pub struct 引擎啓動參數 {
+    pub 用戶數據場地: PathBuf,
+    pub 共享數據場地: Option<PathBuf>,
+    pub 品名: Option<String>,
+    pub 代號: Option<String>,
+    pub 版本: Option<String>,
+    pub 應用名: Option<String>,
+    pub 最小日誌級別: Option<i32>,
+    pub 日誌場地: Option<PathBuf>,
+    pub 預構建固件場地: Option<PathBuf>,
+    pub 緩存場地: Option<PathBuf>,
+}
+impl 引擎啓動參數 {
+    pub fn 新建(用戶數據場地: PathBuf) -> Self {
+        Self {
+            用戶數據場地,
+            ..Default::default()
+        }
+    }
+}
 
-pub fn 設置引擎啓動參數(工作場地: &PathBuf) -> anyhow::Result<()> {
-    log::debug!("設置引擎啓動參數. 工作場地: {}", 工作場地.display());
-    std::fs::create_dir_all(工作場地)?;
-    let 場地〇 = CString::new(工作場地.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
-    let 品名〇 = CString::new(env!("CARGO_PKG_NAME"))?;
-    let 版本〇 = CString::new(env!("CARGO_PKG_VERSION"))?;
+pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<()> {
+    log::debug!("設置引擎啓動參數. 用戶數據場地: {}", 參數.用戶數據場地.display());
+    std::fs::create_dir_all(&參數.用戶數據場地)?;
+    let 用戶數據場地〇 = CString::new(參數.用戶數據場地.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
+    let 共享數據場地〇 = if let Some(ref 場地) = 參數.共享數據場地 {
+        std::fs::create_dir_all(場地)?;
+        Some(CString::new(場地.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?)
+    } else {
+        None
+    };
+    let 品名〇 = if let Some(ref 品名) = 參數.品名 {
+        Some(CString::new(品名.as_str())?)
+    } else {
+        Some(CString::new(env!("CARGO_PKG_NAME"))?)
+    };
+    let 代號〇 = if let Some(ref 代號) = 參數.代號 {
+        Some(CString::new(代號.as_str())?)
+    } else {
+        品名〇.clone()
+    };
+    let 版本〇 = if let Some(ref 版本) = 參數.版本 {
+        Some(CString::new(版本.as_str())?)
+    } else {
+        Some(CString::new(env!("CARGO_PKG_VERSION"))?)
+    };
+    let 應用名〇 = 參數.應用名.as_ref().map(|s| CString::new(s.as_str())).transpose()?;
+    let 日誌場地〇 = if let Some(ref p) = 參數.日誌場地 {
+        std::fs::create_dir_all(p)?;
+        Some(CString::new(p.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?)
+    } else {
+        None
+    };
+    let 預構建固件場地〇 = if let Some(ref p) = 參數.預構建固件場地 {
+        std::fs::create_dir_all(p)?;
+        Some(CString::new(p.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?)
+    } else {
+        None
+    };
+    let 緩存場地〇 = if let Some(ref p) = 參數.緩存場地 {
+        std::fs::create_dir_all(p)?;
+        Some(CString::new(p.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?)
+    } else {
+        None
+    };
+
     let mut 啓動參數: RimeTraits = rime_struct_new!();
     啓動參數.data_size = std::mem::size_of::<RimeTraits>() as std::ffi::c_int;
-    啓動參數.shared_data_dir = 場地〇.as_ptr();
-    啓動參數.user_data_dir = 場地〇.as_ptr();
-    啓動參數.distribution_name = 品名〇.as_ptr();
-    啓動參數.distribution_code_name = 品名〇.as_ptr();
-    啓動參數.distribution_version = 版本〇.as_ptr();
+    啓動參數.shared_data_dir = 共享數據場地〇.as_ref().map_or(用戶數據場地〇.as_ptr(), |s| s.as_ptr());
+    啓動參數.user_data_dir = 用戶數據場地〇.as_ptr();
+    啓動參數.distribution_name = 品名〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+    啓動參數.distribution_code_name = 代號〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+    啓動參數.distribution_version = 版本〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+    if !參數.應用名.is_none() {
+        啓動參數.app_name = 應用名〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+    }
+    if !參數.最小日誌級別.is_none() {
+        啓動參數.min_log_level = 參數.最小日誌級別.unwrap();
+    }
+    if !參數.日誌場地.is_none() {
+        啓動參數.log_dir = 日誌場地〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+    }
+    if !參數.預構建固件場地.is_none() {
+        啓動參數.prebuilt_data_dir = 預構建固件場地〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+    }
+    if !參數.緩存場地.is_none() {
+        啓動參數.staging_dir = 緩存場地〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+    }
     rime_api_call!(setup, &mut 啓動參數);
     Ok(())
 }
@@ -196,7 +271,8 @@ mod tests {
         if 場地.exists() {
             std::fs::remove_dir_all(場地).unwrap();
         }
-        assert_ok!(設置引擎啓動參數(場地));
+        let 參數 = 引擎啓動參數::新建(場地.clone());
+        assert_ok!(設置引擎啓動參數(&參數));
     }
 
     #[test]
@@ -278,9 +354,13 @@ mod tests {
         let _佔 = 佔用引擎機位.write().unwrap_or_else(|e| e.into_inner());
         let 專用測試場地 = std::env::temp_dir().join("rime_levers_tests_build");
         if 專用測試場地.exists() {
+            println!("清理舊有測試場地: {}", 專用測試場地.display());
             assert_ok!(std::fs::remove_dir_all(&專用測試場地));
         }
-        assert_ok!(設置引擎啓動參數(&專用測試場地));
+        let 參數 = 引擎啓動參數::新建(專用測試場地.clone());
+        println!("user data dir: {}", 參數.用戶數據場地.display());
+        println!("shared data dir: {:?}", 參數.共享數據場地.as_ref().map(|p| p.display()));
+        assert_ok!(設置引擎啓動參數(&參數));
         assert_ok!(write(
             專用測試場地.join("default.yaml"),
             r#"
@@ -322,7 +402,8 @@ schema:
         if 專用測試場地.exists() {
             assert_ok!(std::fs::remove_dir_all(&專用測試場地));
         }
-        assert_ok!(設置引擎啓動參數(&專用測試場地));
+        let 參數 = 引擎啓動參數::新建(專用測試場地.clone());
+        assert_ok!(設置引擎啓動參數(&參數));
 
         let 新增輸入方案 = vec!["protoss".to_owned(), "terran".to_owned()];
         assert_ok!(加入輸入方案列表(&新增輸入方案));
@@ -356,7 +437,8 @@ schema:
         if 專用測試場地.exists() {
             assert_ok!(std::fs::remove_dir_all(&專用測試場地));
         }
-        assert_ok!(設置引擎啓動參數(&專用測試場地));
+        let 參數 = 引擎啓動參數::新建(專用測試場地.clone());
+        assert_ok!(設置引擎啓動參數(&參數));
         let 初始輸入方案 = vec![
             "protoss".to_owned(),
             "terran".to_owned(),
@@ -404,7 +486,8 @@ schema:
         if 專用測試場地.exists() {
             assert_ok!(std::fs::remove_dir_all(&專用測試場地));
         }
-        assert_ok!(設置引擎啓動參數(&專用測試場地));
+        let 參數 = 引擎啓動參數::新建(專用測試場地.clone());
+        assert_ok!(設置引擎啓動參數(&參數));
 
         let grrrr_之選 = "protoss";
         assert_ok!(選擇輸入方案(grrrr_之選));
