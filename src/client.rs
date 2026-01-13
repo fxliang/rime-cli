@@ -1,16 +1,58 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use anyhow;
+
+#[cfg(windows)]
+use std::ffi::OsStr;
+#[cfg(windows)]
+use windows::core::PCWSTR;
+#[cfg(windows)]
+use windows::Win32::Foundation::CloseHandle;
 #[cfg(windows)]
 use windows::Win32::System::SystemInformation::{
     GetNativeSystemInfo, PROCESSOR_ARCHITECTURE, PROCESSOR_ARCHITECTURE_AMD64, PROCESSOR_ARCHITECTURE_ARM64, SYSTEM_INFO
 };
 #[cfg(windows)]
+use windows::Win32::System::Threading::{CreateMutexW, ReleaseMutex};
+#[cfg(windows)]
 use windows_version::OsVersion;
 #[cfg(windows)]
 use winreg::RegKey;
+
 #[cfg(windows)]
-use std::ffi::OsStr;
+pub struct Windows互斥鎖 {
+    句柄: windows::Win32::Foundation::HANDLE,
+    #[cfg(debug_assertions)]
+    鎖名: String,
+}
+
+#[cfg(windows)]
+impl Windows互斥鎖 {
+    pub fn new(鎖名: &str) -> anyhow::Result<Self> {
+        let 鎖名_hstring = windows::core::HSTRING::from(鎖名);
+        let 句柄 = unsafe { CreateMutexW(None, false, PCWSTR::from_raw(鎖名_hstring.as_ptr()))? };
+        if 句柄.is_invalid() {
+            return Err(anyhow::anyhow!("無法創建互斥鎖"));
+        }
+        Ok(Windows互斥鎖 {
+            句柄,
+            #[cfg(debug_assertions)]
+            鎖名: 鎖名.to_string(),
+        })
+    }
+}
+
+#[cfg(windows)]
+impl Drop for Windows互斥鎖 {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = ReleaseMutex(self.句柄);
+            let _ = CloseHandle(self.句柄);
+            #[cfg(debug_assertions)]
+            println!("已釋放互斥鎖: {}", self.鎖名);
+        }
+    }
+}
 
 #[cfg(windows)]
 fn 查找_powershell() -> Option<PathBuf> {
@@ -224,6 +266,14 @@ pub fn 用戶目錄() -> Option<String> {
 }
 
 #[cfg(windows)]
+pub fn 共享數據目錄() ->Option<String> {
+    let 程序目錄 = 獲取小狼毫程序目錄()?;
+    let mut 路徑 = PathBuf::from(程序目錄);
+    路徑.push("data");
+    Some(路徑.to_string_lossy().to_string())
+}
+
+#[cfg(windows)]
 pub fn 默認用戶目錄() -> Option<String> {
     if let Some(家目錄) = std::env::var_os("APPDATA") {
         let mut 路徑 = std::path::PathBuf::from(家目錄);
@@ -254,6 +304,30 @@ pub fn 用戶目錄() -> Option<String> {
 #[cfg(not(windows))]
 pub fn 默認用戶目錄() -> Option<String> {
     用戶目錄()
+}
+
+#[cfg(not(windows))]
+pub fn 共享數據目錄() ->Option<String> {
+    None
+}
+
+pub fn 前端部署() -> anyhow::Result<()> {
+    #[cfg(windows)]
+    {
+        let 小狼毫目錄 = 獲取小狼毫程序目錄().ok_or_else(|| anyhow::anyhow!("無法獲取小狼毫程序目錄"))?;
+        let 服務 = PathBuf::from(小狼毫目錄).join("WeaselDeployer.exe");
+        if !服務.exists() {
+            return Err(anyhow::anyhow!("無法找到 WeaselDeployer.exe"));
+        }
+        std::process::Command::new(服務)
+            .arg("/deploy")
+            .spawn()?;
+    }
+    #[cfg(not(windows))]
+    {
+        todo!("實現非 Windows 平台的前端部署");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
