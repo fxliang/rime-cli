@@ -10,6 +10,7 @@ mod package;
 mod recipe;
 mod rime_levers;
 
+use client::*;
 use deploy::部署輸入法固件;
 use download::{下載參數, 下載配方包};
 use install::安裝配方;
@@ -165,10 +166,14 @@ fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Re
         子命令::Add { schemata } => {
             設置引擎構建與整備參數(&場地.源碼場地, &場地.整備場地)?;
             加入輸入方案列表(&schemata)?;
+            #[cfg(windows)]
+            前端部署()?;
         }
         子命令::Remove { schemata } => {
             設置引擎構建與整備參數(&場地.源碼場地, &場地.整備場地)?;
             從方案列表中刪除(&schemata)?;
+            #[cfg(windows)]
+            前端部署()?;
         }
         子命令::Build => {
             設置引擎構建與整備參數(&場地.源碼場地, &場地.整備場地)?;
@@ -209,8 +214,11 @@ fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Re
             }
         }
         子命令::Patch { config, key, value } => {
+            #[cfg(windows)]
+            let _鎖 = Windows互斥鎖::new("WeaselDeployerMutex")?;
             設置引擎構建與整備參數(&場地.源碼場地, &場地.整備場地)?;
             配置補丁(&config, &key, &value)?;
+            製備輸入法固件()?;
         }
         子命令::Select { schema } => {
             設置引擎構建與整備參數(&場地.源碼場地, &場地.整備場地)?;
