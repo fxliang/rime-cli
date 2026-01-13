@@ -251,6 +251,93 @@ pub fn 選擇輸入方案(方案: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn 方案列表(已選: bool) -> anyhow::Result<Vec<String>> {
+    if 已選 {
+        log::debug!("獲取已選方案列表");
+    } else {
+        log::debug!("獲取可用方案列表");
+    }
+
+    rime_api_call!(deployer_initialize, std::ptr::null_mut());
+    use rime::RimeCustomSettings;
+    let mut 可用方案列表 = vec![];
+    let mut 已選方案列表 = vec![];
+    let 槓桿模塊 = rime_api_call!(
+            find_module,
+            CStr::from_bytes_with_nul(b"levers\0").unwrap().as_ptr()
+        );
+    let 切換器設置 = rime_module_call!(
+        槓桿模塊 => RimeLeversApi,
+        switcher_settings_init
+    );
+    rime_module_call!(
+        槓桿模塊 => RimeLeversApi,
+        load_settings,
+        切換器設置 as *mut RimeCustomSettings
+    );
+    let mut 已選列表 = rime_struct_new!();
+    rime_module_call!(
+        槓桿模塊 => RimeLeversApi,
+        get_selected_schema_list,
+        切換器設置,
+        &mut 已選列表
+    );
+    for i in 0..已選列表.size {
+        let 方案識別碼指針 = unsafe { *已選列表.list.add(i as usize) }.schema_id;
+        if !方案識別碼指針.is_null() {
+            已選方案列表.push(unsafe { CStr::from_ptr(方案識別碼指針).to_str().unwrap().to_owned() });
+        }
+    }
+    let mut 可用列表 = rime_struct_new!();
+    rime_module_call!(
+        槓桿模塊 => RimeLeversApi,
+        get_available_schema_list,
+        切換器設置,
+        &mut 可用列表
+    ); 
+    for i in 0..可用列表.size {
+        let 方案識別碼指針 = unsafe { *可用列表.list.add(i as usize) }.schema_id;
+        let 方案資訊指針 = unsafe { *可用列表.list.add(i as usize) }.reserved as *mut rime::RimeSchemaInfo;
+        let 方案名稱指針 = rime_module_call!(
+                槓桿模塊 => RimeLeversApi,
+                get_schema_name,
+                方案資訊指針
+            );
+        let mut 識別碼 = unsafe { CStr::from_ptr(方案識別碼指針).to_str().unwrap().to_owned() };
+        if !方案識別碼指針.is_null() {
+            識別碼.push_str(&format!(" [{}]", unsafe { CStr::from_ptr(方案名稱指針).to_str().unwrap() }));
+            可用方案列表.push(識別碼);
+        }
+    }
+    rime_api_call!(finalize);
+    use std::collections::HashMap;
+    let 識別碼到完整: HashMap<&str, String> = 可用方案列表.iter()
+        .filter_map(|item| {
+            let 識別碼 = item.split_whitespace().next()?;
+            Some((識別碼, item.clone()))
+        })
+        .collect();
+    let 已選方案列表 = 已選方案列表
+        .into_iter()
+        .map(|識別碼| 識別碼到完整.get(識別碼.as_str()).unwrap_or(&識別碼).clone())
+        .collect::<Vec<String>>();
+    let 已選識別碼: std::collections::HashSet<&str> = 已選方案列表.iter()
+        .filter_map(|item| item.split_whitespace().next())
+        .collect();
+    let 可用方案列表 = 可用方案列表
+        .into_iter()
+        .filter(|item| {
+            let 識別碼 = item.split_whitespace().next().unwrap_or("");
+            !已選識別碼.contains(識別碼)
+        })
+        .collect::<Vec<String>>();
+    if 已選 {
+        Ok(已選方案列表)
+    } else {
+        Ok(可用方案列表)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

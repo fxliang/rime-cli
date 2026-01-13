@@ -13,8 +13,9 @@ use download::{下載參數, 下載配方包};
 use install::安裝配方;
 use recipe::配方名片;
 use rime_levers::{
-    加入輸入方案列表, 製備輸入法固件, 設置引擎啓動參數, 選擇輸入方案, 配置補丁, 從方案列表中刪除, 引擎啓動參數
+    加入輸入方案列表, 製備輸入法固件, 選擇輸入方案, 配置補丁, 從方案列表中刪除,
 };
+
 use client::{*};
 
 #[derive(Debug, StructOpt)]
@@ -110,19 +111,13 @@ fn main() -> anyhow::Result<()> {
 fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
     match 命令行參數 {
         子命令::Add { schemata } => {
-            let 用戶數據目錄 = 用戶目錄().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-            let mut 參數 = 引擎啓動參數::新建(用戶數據目錄);
-            參數.共享數據場地 = 共享數據目錄().map(PathBuf::from);
-            設置引擎啓動參數(&參數)?;
+            初始化引擎()?;
             加入輸入方案列表(&schemata)?;
             前端部署()?;
             return Ok(())
         }
         子命令::Remove { schemata } => {
-            let 用戶數據目錄 = 用戶目錄().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-            let mut 參數 = 引擎啓動參數::新建(用戶數據目錄);
-            參數.共享數據場地 = 共享數據目錄().map(PathBuf::from);
-            設置引擎啓動參數(&參數)?;
+            初始化引擎()?;
             從方案列表中刪除(&schemata)?;
             前端部署()?;
             return Ok(())
@@ -135,10 +130,7 @@ fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
             }
             #[cfg(not(windows))]
             {
-                let 用戶數據目錄 = 用戶目錄().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-                let mut 參數 = 引擎啓動參數::新建(用戶數據目錄);
-                參數.共享數據場地 = 共享數據目錄().map(PathBuf::from);
-                設置引擎啓動參數(&參數)?;
+                初始化引擎()?;
                 製備輸入法固件()?;
             }
         }
@@ -166,12 +158,7 @@ fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
             }
         }
         子命令::Patch { config, key, value } => {
-            #[cfg(windows)]
-            let _ = Windows互斥鎖::new("WeaselDeployerMutex")?;
-            let 用戶數據目錄 = 用戶目錄().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-            let mut 參數 = 引擎啓動參數::新建(用戶數據目錄);
-            參數.共享數據場地 = 共享數據目錄().map(PathBuf::from);
-            設置引擎啓動參數(&參數)?;
+            初始化引擎()?;
             配置補丁(&config, &key, &value)?;
             製備輸入法固件()?;
         }
@@ -192,6 +179,7 @@ fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
 
 #[cfg(feature = "tui")]
 mod tui {
+    use rime_levers::方案列表;
     use super::*;
     use crate::download::{下載參數, 同步rppi索引};
     use dialoguer::{theme::ColorfulTheme, Input, Select};
@@ -296,6 +284,7 @@ mod tui {
                 "退出".to_string(),
             ];
             let sel = Select::with_theme(&主題)
+                .with_prompt("選擇操作 (使用方向鍵(或者jk)移动選擇，回車或空格確認, q或Esc退出)")
                 .items(&選項)
                 .default(0)
                 .interact_on_opt(&終端)?;
@@ -325,12 +314,25 @@ mod tui {
                     false
                 }
                 Some(3) => {
-                    let Some(schema) = 讀取可取消("選擇的輸入方案 (輸入q或c回車退出)", &主題)? else {
-                        continue 'tui;
+                    初始化引擎()?;
+                    let 列表 = 方案列表(true)?;
+
+                    let 選項 = 列表.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+                    let sel = Select::with_theme(&主題)
+                        .with_prompt("要選擇的輸入方案 (輸入q或Esc退出)")
+                        .items(&選項)
+                        .default(0)
+                        .interact_on_opt(&終端)?;
+                    let 方案 = match sel {
+                        Some(idx) => {
+                            let 原始方案 = 列表[idx].split_whitespace().next().unwrap_or("").to_string();
+                            vec![原始方案]
+                        },
+                        None => continue 'tui,
                     };
-                    if !schema.trim().is_empty() {
+                    if !方案.is_empty() {
                         狀態 = Some(執行tui命令參數(
-                            vec!["select".to_string(), schema],
+                            vec!["select".to_string(), 方案[0].clone()],
                             host.as_deref(),
                             proxy.as_deref(),
                         )?);
@@ -338,13 +340,22 @@ mod tui {
                     false
                 }
                 Some(4) => {
-                    let Some(輸入) = 讀取可取消("要加入的輸入方案 (空格分隔), 輸入q或c回車退出", &主題)? else {
-                        continue 'tui;
+                    初始化引擎()?;
+                    let 列表 = 方案列表(false)?;
+
+                    let 選項 = 列表.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+                    let sel = Select::with_theme(&主題)
+                        .with_prompt("要加入的輸入方案 (輸入q或Esc退出)")
+                        .items(&選項)
+                        .default(0)
+                        .interact_on_opt(&終端)?;
+                    let 方案 = match sel {
+                        Some(idx) => {
+                            let 原始方案 = 列表[idx].split_whitespace().next().unwrap_or("").to_string();
+                            vec![原始方案]
+                        },
+                        None => continue 'tui,
                     };
-                    let 方案 = 輸入
-                        .split_whitespace()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<_>>();
                     if !方案.is_empty() {
                         let mut args = vec!["add".to_string()];
                         args.extend(方案);
@@ -353,13 +364,23 @@ mod tui {
                     false
                 }
                 Some(5) => {
-                    let Some(輸入) = 讀取可取消("要刪除的輸入方案 (空格分隔), 輸入q或c回車退出", &主題)? else {
-                        continue 'tui;
+                    初始化引擎()?;
+                    let 列表 = 方案列表(true)?;
+
+                    let 選項 = 列表.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+                    let sel = Select::with_theme(&主題)
+                        .with_prompt("要刪除的輸入方案 (輸入q或Esc退出)")
+                        .items(&選項)
+                        .default(0)
+                        .interact_on_opt(&終端)?;
+
+                    let 方案 = match sel {
+                        Some(idx) => {
+                            let 原始方案 = 列表[idx].split_whitespace().next().unwrap_or("").to_string();
+                            vec![原始方案]
+                        },
+                        None => continue 'tui,
                     };
-                    let 方案 = 輸入
-                        .split_whitespace()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<_>>();
                     if !方案.is_empty() {
                         let mut args = vec!["remove".to_string()];
                         args.extend(方案);
@@ -502,6 +523,7 @@ mod tui {
             "返回".to_string(),
         ];
         let sel = Select::with_theme(主題)
+            .with_prompt("選擇配方來源 (使用方向鍵(或者jk)移动選擇，回車或空格確認, q或Esc退出)")
             .items(&選項)
             .default(0)
             .interact_on_opt(終端)?;
