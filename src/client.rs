@@ -362,6 +362,16 @@ pub fn 前端部署() -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn 初始化引擎() -> anyhow::Result<()> {
+    let 用戶數據目錄 = 用戶目錄()
+        .or_else(默認用戶目錄)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let mut 參數 = crate::rime_levers::引擎啓動參數::新建(用戶數據目錄);
+    參數.共享數據場地 = 共享數據目錄().map(PathBuf::from);
+    crate::rime_levers::設置引擎啓動參數(&參數)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
