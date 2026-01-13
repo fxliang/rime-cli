@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use std::{fs::File, io::{Write, Read}, time::Instant, path::{Path, PathBuf}};
 use reqwest::{self, header::CONTENT_LENGTH};
 use crate::download::下載參數;
+#[cfg(windows)]
 use crate::client::{*};
 
 #[derive(serde::Deserialize)]
