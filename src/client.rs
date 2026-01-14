@@ -304,6 +304,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(windows)]
     fn test_路徑相同() {
         let p1 = Path::new("C:\\Windows\\System32\\notepad.exe");
         let p2 = Path::new("C:\\Windows\\System32\\..\\System32\\notepad.exe");
