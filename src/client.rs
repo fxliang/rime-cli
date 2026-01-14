@@ -314,6 +314,8 @@ pub fn 初始化引擎() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
+    use super::*;
 
     #[test]
     #[cfg(windows)]
