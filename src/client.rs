@@ -1,5 +1,6 @@
 use anyhow;
 use std::path::{Path, PathBuf};
+#[cfg(windows)]
 use std::process::Command;
 
 #[cfg(windows)]
@@ -377,6 +378,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(windows)]
     fn test_路徑相同() {
         let p1 = Path::new("C:\\Windows\\System32\\notepad.exe");
         let p2 = Path::new("C:\\Windows\\System32\\..\\System32\\notepad.exe");
