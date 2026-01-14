@@ -318,19 +318,18 @@ pub fn 默認用戶目錄() -> Option<String> {
 
 #[cfg(not(windows))]
 pub fn 用戶目錄() -> Option<String> {
-    // macOS 下，鼠須管的用戶目錄通常在 ~/Library/Rime
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(家目錄) = std::env::var_os("HOME") {
-            let mut 路徑 = std::path::PathBuf::from(家目錄);
+    if let Some(家目錄) = std::env::var_os("HOME") {
+        let mut 路徑 = PathBuf::from(家目錄);
+        #[cfg(target_os = "macos")]
+        {
             路徑.push("Library/Rime");
-            Some(路徑.to_string_lossy().to_string())
-        } else {
-            None
         }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
+        #[cfg(not(target_os = "macos"))]
+        {
+            路徑.push(".config/ibus/rime");
+        }
+        Some(路徑.to_string_lossy().to_string())
+    } else {
         None
     }
 }
@@ -342,7 +341,22 @@ pub fn 默認用戶目錄() -> Option<String> {
 
 #[cfg(not(windows))]
 pub fn 共享數據目錄() -> Option<String> {
-    None
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(root) = std::env::var_os("DSTROOT") {
+            return Some(
+                PathBuf::from(root)
+                    .join("Contents/SharedSupport")
+                    .to_string_lossy()
+                    .to_string(),
+            );
+        }
+        None
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Some("/usr/share/rime-data".to_string())
+    }
 }
 
 pub fn 前端部署() -> anyhow::Result<()> {
