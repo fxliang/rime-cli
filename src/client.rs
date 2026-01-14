@@ -1,5 +1,7 @@
 use anyhow;
-use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::path::Path;
+use std::path::PathBuf;
 #[cfg(windows)]
 use std::process::Command;
 
@@ -389,6 +391,7 @@ pub fn 初始化引擎() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
     use super::*;
 
     #[test]
