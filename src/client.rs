@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(windows)]
+use std::path::Path;
 #[cfg(windows)]
 use std::process::Command;
 use anyhow;
@@ -247,18 +249,17 @@ pub fn 默認用戶目錄() -> Option<String> {
 
 #[cfg(not(windows))]
 pub fn 用戶目錄() -> Option<String> {
-    // macOS 下，鼠須管的用戶目錄通常在 ~/Library/Rime
-    #[cfg(target_os = "macos")] {
-        if let Some(家目錄) = std::env::var_os("HOME") {
-            let mut 路徑 = std::path::PathBuf::from(家目錄);
-            路徑.push("Library/Rime");
-            Some(路徑.to_string_lossy().to_string())
-        } else {
-            None
-        }
-    }
-    #[cfg(not(target_os = "macos"))] {
-        todo!("實現其他非 Windows 平台的用戶目錄獲取");
+    if let Some(家目錄) = std::env::var_os("HOME") {
+        let mut 路徑 = std::path::PathBuf::from(家目錄);
+
+        #[cfg(target_os = "macos")] 
+        路徑.push("Library/Rime");
+        #[cfg(not(target_os = "macos"))]
+        路徑.push(".config/ibus/rime");
+
+        Some(路徑.to_string_lossy().to_string())
+    } else {
+        todo!("家路徑異常");
     }
 }
  
@@ -269,7 +270,18 @@ pub fn 默認用戶目錄() -> Option<String> {
 
 #[cfg(not(windows))]
 pub fn 共享數據目錄() ->Option<String> {
-    todo!("實現非 Windows 平台的共享數據目錄獲取");
+    #[cfg(target_os = "macos")] {
+        if let Some(目標路徑) = std::env::var_os("DSTROOT") {
+            let mut 路徑 = std::path::PathBuf::from(目標路徑);
+            路徑.push("Contents/SharedSupport");
+            Some(路徑.to_string_lossy().to_string())
+        } else {
+            todo!("DSTROOT路徑異常")
+        }
+    }
+    #[cfg(not(target_os = "macos"))] {
+        Some("/usr/share/rime-data".to_string())
+    }
 }
 
 pub fn 前端部署() -> anyhow::Result<()> {
@@ -291,6 +303,7 @@ pub fn 前端部署() -> anyhow::Result<()> {
     }
     Ok(())
 }
+
 pub fn 初始化引擎() -> anyhow::Result<()> {
     let 用戶數據目錄 = 用戶目錄().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     let mut 參數 = 引擎啓動參數::新建(用戶數據目錄);
@@ -301,7 +314,6 @@ pub fn 初始化引擎() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     #[cfg(windows)]
