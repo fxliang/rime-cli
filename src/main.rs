@@ -316,6 +316,10 @@ mod tui {
                 Some(3) => {
                     初始化引擎()?;
                     let 列表 = 方案列表(true)?;
+                    if 列表.is_empty() {
+                        println!("已選方案列表爲空");
+                        continue 'tui
+                    }
 
                     let 選項 = 列表.iter().map(|s| s.as_str()).collect::<Vec<_>>();
                     let sel = Select::with_theme(&主題)
