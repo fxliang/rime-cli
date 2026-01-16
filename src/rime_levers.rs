@@ -251,6 +251,7 @@ pub fn 選擇輸入方案(方案: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "tui")]
 pub fn 方案列表(已選: bool) -> anyhow::Result<Vec<String>> {
     if 已選 {
         log::debug!("獲取已選方案列表");
