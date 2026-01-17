@@ -386,6 +386,12 @@ pub fn 初始化引擎() -> anyhow::Result<()> {
         .unwrap_or_else(|| PathBuf::from("."));
     let mut 參數 = crate::rime_levers::引擎啓動參數::新建(用戶數據目錄);
     參數.共享數據場地 = 共享數據目錄().map(PathBuf::from);
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    let logs = PathBuf::from(home.unwrap_or_else(|| ".".into()))
+        .join(".rime-cli")
+        .join("logs");
+    參數.日誌場地 = Some(logs);
+    參數.應用名 = Some("rime-cli".to_string());
     crate::rime_levers::設置引擎啓動參數(&參數)
 }
 
