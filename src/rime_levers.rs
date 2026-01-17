@@ -262,6 +262,84 @@ pub fn 選擇輸入方案(方案: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+unsafe fn 系統編碼轉換為路徑(輸入字串指標: *const i8) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    use std::ffi::CStr;
+    use std::os::windows::ffi::OsStringExt;
+    use windows::Win32::Globalization::{
+        MultiByteToWideChar, CP_ACP, MB_PRECOMPOSED,
+    };
+
+    let c位元組切片 = CStr::from_ptr(輸入字串指標).to_bytes();
+    let 位元組長度 = c位元組切片.len();
+
+    if 位元組長度 == 0 {
+        return Ok(std::path::PathBuf::new());
+    }
+
+    // 第一階段：計算所需寬字元數量（緩衝區傳 None）
+    let 寬字元長度 = unsafe {
+        MultiByteToWideChar(
+            CP_ACP,
+            MB_PRECOMPOSED,
+            c位元組切片, // ← 直接傳 &[u8]
+            None,        // ← 不提供輸出緩衝區，僅計算長度
+        )
+    };
+
+    if 寬字元長度 <= 0 {
+        return Err("呼叫 MultiByteToWideChar 失敗（第一階段）".into());
+    }
+
+    // 配置寬字元緩衝區
+    let mut 寬字元緩衝區 = vec![0u16; 寬字元長度 as usize];
+
+    // 第二階段：執行實際轉換
+    let 轉換結果 = unsafe {
+        MultiByteToWideChar(
+            CP_ACP,
+            MB_PRECOMPOSED,
+            c位元組切片,           // ← 輸入位元組 slice
+            Some(&mut 寬字元緩衝區), // ← 提供可變 slice 作為輸出
+        )
+    };
+
+    if 轉換結果 <= 0 {
+        return Err("呼叫 MultiByteToWideChar 失敗（第二階段）".into());
+    }
+
+    // 從寬字元序列建構 OsString
+    let 作業系統字串 = std::ffi::OsString::from_wide(&寬字元緩衝區);
+    Ok(std::path::PathBuf::from(作業系統字串))
+}
+
+pub fn 檢查默認設置自定義文件() {
+    unsafe {
+        let 用戶場地i8 = rime_api_call!(get_user_data_dir);
+        if 用戶場地i8.is_null() {
+            panic!("Rime returned null user data dir");
+        }
+        #[cfg(unix)]
+        let 用戶場地: PathBuf = {
+            use std::os::unix::ffi::OsStrExt;
+            std::ffi::OsStr::from_bytes(std::ffi::CStr::from_ptr(用戶場地i8).to_bytes()).into()
+        };
+
+        #[cfg(windows)]
+        let 用戶場地: PathBuf = {
+            系統編碼轉換為路徑(用戶場地i8).expect("Failed to convert ANSI path to PathBuf")
+        };
+
+        let 用戶場地 = 用戶場地.join("default.custom.yaml");
+        if !用戶場地.exists() {
+            match std::fs::File::create(&用戶場地) {
+                Ok(_) => println!("空文件已创建: {:?}", 用戶場地),
+                Err(e) => eprintln!("創建文件{} 失敗: {}", 用戶場地.display(), e),
+            }
+        }
+    }
+}
+
 pub fn 方案列表(已選: bool) -> anyhow::Result<Vec<String>> {
     if 已選 {
         log::debug!("獲取已選方案列表");
