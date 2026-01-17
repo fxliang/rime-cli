@@ -203,6 +203,22 @@ pub fn 從方案列表中刪除(衆輸入方案: &[String]) -> anyhow::Result<()
     );
     // 取得已有方案列表
     let 方案列表〇 = CString::new("patch/schema_list")?;
+
+    // 在測試中沒有使用真實的方案，所以還是從default.custom.yaml中獲取
+    #[cfg(test)]
+    let 既有方案數 = rime_api_call!(config_list_size, &mut 自訂配置, 方案列表〇.as_ptr()) as u64;
+    #[cfg(test)]
+    let mut 既有方案 = vec![];
+    #[cfg(test)]
+    for i in 0..既有方案數 {
+        let 列表項〇 = CString::new(format!("patch/schema_list/@{}/schema", i))?;
+        let 方案 = rime_api_call!(config_get_cstring, &mut 自訂配置, 列表項〇.as_ptr());
+        if !方案.is_null() {
+            既有方案.push(unsafe { CStr::from_ptr(方案) }.to_str()? .to_owned());
+        }
+    }
+
+    #[cfg(not(test))]
     let 既有方案 = 方案列表(true)?
         .into_iter()
         .map(|s| s.split_whitespace().next().unwrap_or("").to_string())
