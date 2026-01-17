@@ -145,7 +145,7 @@ fn main() -> anyhow::Result<()> {
     log::debug!("參數: {:?}", cli.command);
 
     match cli.command {
-        Some(命令行參數) => 執行命令(命令行參數, &cli.場地),
+        Some(命令行參數) => 執行命令(命令行參數, &cli.場地, false),
         None => {
             #[cfg(feature = "tui")]
             {
@@ -161,24 +161,25 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Result<()> {
+fn 執行命令(
+    命令行參數: 子命令, 場地: &場地參數, 圖形界面: bool
+) -> anyhow::Result<()> {
     match 命令行參數 {
         子命令::Add { schemata } => {
-            #[cfg(not(feature = "tui"))]
-            初始化引擎()?;
-            #[cfg(not(feature = "tui"))]
-            檢查默認設置自定義文件();
+            if !圖形界面 {
+                初始化引擎()?;
+                檢查默認設置自定義文件();
+            }
 
             加入輸入方案列表(&schemata)?;
             #[cfg(windows)]
             前端部署()?;
         }
         子命令::Remove { schemata } => {
-            #[cfg(not(feature = "tui"))]
-            初始化引擎()?;
-            #[cfg(not(feature = "tui"))]
-            檢查默認設置自定義文件();
-
+            if !圖形界面 {
+                初始化引擎()?;
+                檢查默認設置自定義文件();
+            }
             從方案列表中刪除(&schemata)?;
             #[cfg(windows)]
             前端部署()?;
@@ -191,8 +192,9 @@ fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Re
             }
             #[cfg(not(windows))]
             {
-                #[cfg(not(feature = "tui"))]
-                初始化引擎()?;
+                if !圖形界面 {
+                    初始化引擎()?;
+                }
                 製備輸入法固件()?;
             }
         }
@@ -233,19 +235,19 @@ fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Re
         子命令::Patch { config, key, value } => {
             #[cfg(windows)]
             let _鎖 = Windows互斥鎖::new("WeaselDeployerMutex")?;
-            #[cfg(not(feature = "tui"))]
-            初始化引擎()?;
-            #[cfg(not(feature = "tui"))]
-            檢查默認設置自定義文件();
+            if !圖形界面 {
+                初始化引擎()?;
+                檢查默認設置自定義文件();
+            }
 
             配置補丁(&config, &key, &value)?;
             製備輸入法固件()?;
         }
         子命令::Select { schema } => {
-            #[cfg(not(feature = "tui"))]
-            初始化引擎()?;
-            #[cfg(not(feature = "tui"))]
-            檢查默認設置自定義文件();
+            if !圖形界面 {
+                初始化引擎()?;
+                檢查默認設置自定義文件();
+            }
 
             選擇輸入方案(&schema)?;
         }
@@ -897,7 +899,7 @@ mod tui {
         }
 
         match 子命令::from_iter_safe(全部參數.clone()) {
-            Ok(cmd) => match 執行命令(cmd, 場地) {
+            Ok(cmd) => match 執行命令(cmd, 場地, true) {
                 Ok(()) => {
                     let 描述 = if 全部參數.len() > 1 {
                         全部參數[1..].join(" ")
