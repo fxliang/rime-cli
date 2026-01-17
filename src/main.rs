@@ -577,6 +577,7 @@ mod tui {
                         host.as_deref(),
                         proxy.as_deref(),
                     )?);
+                    已部署 = true;
                     false
                 }
                 Some(8) => {
