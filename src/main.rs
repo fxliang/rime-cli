@@ -16,8 +16,7 @@ use download::{下載參數, 下載配方包};
 use install::安裝配方;
 use recipe::配方名片;
 use rime_levers::{
-    加入輸入方案列表, 從方案列表中刪除, 測試輸入法固件, 製備輸入法固件, 設置引擎構建與整備參數,
-    選擇輸入方案, 配置補丁,
+    加入輸入方案列表, 從方案列表中刪除, 測試輸入法固件, 製備輸入法固件, 選擇輸入方案, 配置補丁,
 };
 
 #[derive(Debug, StructOpt)]
@@ -164,12 +163,14 @@ fn main() -> anyhow::Result<()> {
 fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Result<()> {
     match 命令行參數 {
         子命令::Add { schemata } => {
+            #[cfg(not(feature = "tui"))]
             初始化引擎()?;
             加入輸入方案列表(&schemata)?;
             #[cfg(windows)]
             前端部署()?;
         }
         子命令::Remove { schemata } => {
+            #[cfg(not(feature = "tui"))]
             初始化引擎()?;
             從方案列表中刪除(&schemata)?;
             #[cfg(windows)]
@@ -183,6 +184,7 @@ fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Re
             }
             #[cfg(not(windows))]
             {
+                #[cfg(not(feature = "tui"))]
                 初始化引擎()?;
                 製備輸入法固件()?;
             }
@@ -224,12 +226,14 @@ fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Re
         子命令::Patch { config, key, value } => {
             #[cfg(windows)]
             let _鎖 = Windows互斥鎖::new("WeaselDeployerMutex")?;
+            #[cfg(not(feature = "tui"))]
             初始化引擎()?;
             配置補丁(&config, &key, &value)?;
             製備輸入法固件()?;
         }
         子命令::Select { schema } => {
-            設置引擎構建與整備參數(&場地.源碼場地, &場地.整備場地)?;
+            #[cfg(not(feature = "tui"))]
+            初始化引擎()?;
             選擇輸入方案(&schema)?;
         }
         子命令::Deploy => 部署輸入法固件(&場地.整備場地, &場地.目標場地)?,
@@ -334,7 +338,8 @@ mod tui {
         let mut host = 配置.host.clone();
         let mut rppi索引: Option<PathBuf> = None;
         let mut 狀態: Option<String> = None;
-
+        let mut 已部署 = false;
+        初始化引擎()?;
         'tui: loop {
             if let Some(msg) = 狀態.take() {
                 println!("{msg}");
@@ -406,11 +411,19 @@ mod tui {
                     false
                 }
                 Some(3) => {
-                    初始化引擎()?;
+                    if !已部署 {
+                        _ = Some(執行tui命令參數(
+                            vec!["build".to_string()],
+                            場地,
+                            host.as_deref(),
+                            proxy.as_deref(),
+                        )?);
+                        已部署 = true;
+                    }
                     let 列表 = 方案列表(true)?;
                     if 列表.is_empty() {
                         println!("已選方案列表爲空");
-                        continue 'tui
+                        continue 'tui;
                     }
 
                     let 選項 = 列表.iter().map(|s| s.as_str()).collect::<Vec<_>>();
@@ -441,7 +454,15 @@ mod tui {
                     false
                 }
                 Some(4) => {
-                    初始化引擎()?;
+                    if !已部署 {
+                        _ = Some(執行tui命令參數(
+                            vec!["build".to_string()],
+                            場地,
+                            host.as_deref(),
+                            proxy.as_deref(),
+                        )?);
+                        已部署 = true;
+                    }
                     let 列表 = 方案列表(false)?;
                     if 列表.is_empty() {
                         println!("可添加方案列表爲空");
@@ -478,7 +499,15 @@ mod tui {
                     false
                 }
                 Some(5) => {
-                    初始化引擎()?;
+                    if !已部署 {
+                        _ = Some(執行tui命令參數(
+                            vec!["build".to_string()],
+                            場地,
+                            host.as_deref(),
+                            proxy.as_deref(),
+                        )?);
+                        已部署 = true;
+                    }
                     let 列表 = 方案列表(true)?;
                     if 列表.is_empty() {
                         println!("已選方案列表爲空");
