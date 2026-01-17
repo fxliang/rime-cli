@@ -16,7 +16,8 @@ use download::{下載參數, 下載配方包};
 use install::安裝配方;
 use recipe::配方名片;
 use rime_levers::{
-    加入輸入方案列表, 從方案列表中刪除, 測試輸入法固件, 製備輸入法固件, 選擇輸入方案, 配置補丁,
+    加入輸入方案列表, 從方案列表中刪除, 檢查默認設置自定義文件, 測試輸入法固件, 製備輸入法固件,
+    選擇輸入方案, 配置補丁,
 };
 
 #[derive(Debug, StructOpt)]
@@ -165,6 +166,9 @@ fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Re
         子命令::Add { schemata } => {
             #[cfg(not(feature = "tui"))]
             初始化引擎()?;
+            #[cfg(not(feature = "tui"))]
+            檢查默認設置自定義文件();
+
             加入輸入方案列表(&schemata)?;
             #[cfg(windows)]
             前端部署()?;
@@ -172,6 +176,9 @@ fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Re
         子命令::Remove { schemata } => {
             #[cfg(not(feature = "tui"))]
             初始化引擎()?;
+            #[cfg(not(feature = "tui"))]
+            檢查默認設置自定義文件();
+
             從方案列表中刪除(&schemata)?;
             #[cfg(windows)]
             前端部署()?;
@@ -228,12 +235,18 @@ fn 執行命令(命令行參數: 子命令, 場地: &場地參數) -> anyhow::Re
             let _鎖 = Windows互斥鎖::new("WeaselDeployerMutex")?;
             #[cfg(not(feature = "tui"))]
             初始化引擎()?;
+            #[cfg(not(feature = "tui"))]
+            檢查默認設置自定義文件();
+
             配置補丁(&config, &key, &value)?;
             製備輸入法固件()?;
         }
         子命令::Select { schema } => {
             #[cfg(not(feature = "tui"))]
             初始化引擎()?;
+            #[cfg(not(feature = "tui"))]
+            檢查默認設置自定義文件();
+
             選擇輸入方案(&schema)?;
         }
         子命令::Deploy => 部署輸入法固件(&場地.整備場地, &場地.目標場地)?,
@@ -340,6 +353,10 @@ mod tui {
         let mut 狀態: Option<String> = None;
         let mut 已部署 = false;
         初始化引擎()?;
+
+        // 旧librime在default.custom.yaml 不存在的時候會導致獲取列表失敗
+        檢查默認設置自定義文件();
+
         'tui: loop {
             if let Some(msg) = 狀態.take() {
                 println!("{msg}");
