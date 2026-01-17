@@ -308,7 +308,7 @@ pub fn 從方案列表中刪除(衆輸入方案: &[String]) -> anyhow::Result<()
     // 取得已有方案列表
     let 方案列表〇 = CString::new("patch/schema_list")?;
     let 既有方案數 = rime_api_call!(config_list_size, &mut 自訂配置, 方案列表〇.as_ptr()) as u64;
-    let mut 既有方案 = vec![];
+    let mut 既有方案 = Vec::new();
     for i in 0..既有方案數 {
         let 列表項〇 = CString::new(format!("patch/schema_list/@{}/schema", i))?;
         let 方案 = rime_api_call!(config_get_cstring, &mut 自訂配置, 列表項〇.as_ptr());
@@ -357,7 +357,6 @@ pub fn 選擇輸入方案(方案: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "tui")]
 pub fn 方案列表(已選: bool) -> anyhow::Result<Vec<String>> {
     if 已選 {
         log::debug!("獲取已選方案列表");
