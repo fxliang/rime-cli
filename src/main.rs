@@ -440,6 +440,7 @@ mod tui {
                 }
                 Some(7) => {
                     狀態 = Some(執行tui命令參數(vec!["build".to_string()], host.as_deref(), proxy.as_deref())?);
+                    已部署 = true;
                     false
                 }
                 Some(8) => {
