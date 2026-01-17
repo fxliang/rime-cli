@@ -14,6 +14,7 @@ use install::安裝配方;
 use recipe::配方名片;
 use rime_levers::{
     加入輸入方案列表, 製備輸入法固件, 選擇輸入方案, 配置補丁, 從方案列表中刪除,
+    檢查默認設置自定義文件
 };
 
 use client::{*};
@@ -113,6 +114,9 @@ fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
         子命令::Add { schemata } => {
             #[cfg(not(feature="tui"))]
             初始化引擎()?;
+            #[cfg(not(feature="tui"))]
+            檢查默認設置自定義文件();
+
             加入輸入方案列表(&schemata)?;
             前端部署()?;
             return Ok(())
@@ -120,6 +124,9 @@ fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
         子命令::Remove { schemata } => {
             #[cfg(not(feature="tui"))]
             初始化引擎()?;
+            #[cfg(not(feature="tui"))]
+            檢查默認設置自定義文件();
+
             從方案列表中刪除(&schemata)?;
             前端部署()?;
             return Ok(())
@@ -163,12 +170,18 @@ fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
         子命令::Patch { config, key, value } => {
             #[cfg(not(feature="tui"))]
             初始化引擎()?;
+            #[cfg(not(feature="tui"))]
+            檢查默認設置自定義文件();
+
             配置補丁(&config, &key, &value)?;
             製備輸入法固件()?;
         }
         子命令::Select { schema } => {
             #[cfg(not(feature="tui"))]
             初始化引擎()?;
+            #[cfg(not(feature="tui"))]
+            檢查默認設置自定義文件();
+
             選擇輸入方案(&schema)?;
         }
         子命令::Get { tag, 下載參數 } => {
@@ -273,6 +286,10 @@ mod tui {
         let mut 狀態: Option<String> = None;
         let mut 已部署 = false;
         初始化引擎()?;
+
+        // 旧librime在default.custom.yaml 不存在的時候會導致獲取列表失敗
+        檢查默認設置自定義文件();
+
         'tui: loop {
             if let Some(msg) = 狀態.take() {
                 println!("{msg}");
