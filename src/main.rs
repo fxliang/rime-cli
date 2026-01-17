@@ -111,12 +111,14 @@ fn main() -> anyhow::Result<()> {
 fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
     match 命令行參數 {
         子命令::Add { schemata } => {
+            #[cfg(not(feature="tui"))]
             初始化引擎()?;
             加入輸入方案列表(&schemata)?;
             前端部署()?;
             return Ok(())
         }
         子命令::Remove { schemata } => {
+            #[cfg(not(feature="tui"))]
             初始化引擎()?;
             從方案列表中刪除(&schemata)?;
             前端部署()?;
@@ -130,6 +132,7 @@ fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
             }
             #[cfg(not(windows))]
             {
+                #[cfg(not(feature="tui"))]
                 初始化引擎()?;
                 製備輸入法固件()?;
             }
@@ -158,11 +161,14 @@ fn 執行命令(命令行參數: 子命令) -> anyhow::Result<()> {
             }
         }
         子命令::Patch { config, key, value } => {
+            #[cfg(not(feature="tui"))]
             初始化引擎()?;
             配置補丁(&config, &key, &value)?;
             製備輸入法固件()?;
         }
         子命令::Select { schema } => {
+            #[cfg(not(feature="tui"))]
+            初始化引擎()?;
             選擇輸入方案(&schema)?;
         }
         子命令::Get { tag, 下載參數 } => {
@@ -265,7 +271,8 @@ mod tui {
         let mut host = 配置.host.clone();
         let mut rppi索引: Option<PathBuf> = None;
         let mut 狀態: Option<String> = None;
-
+        let mut 已部署 = false;
+        初始化引擎()?;
         'tui: loop {
             if let Some(msg) = 狀態.take() {
                 println!("{msg}");
@@ -314,7 +321,10 @@ mod tui {
                     false
                 }
                 Some(3) => {
-                    初始化引擎()?;
+                    if !已部署 {
+                        _ = Some(執行tui命令參數(vec!["build".to_string()], host.as_deref(), proxy.as_deref())?);
+                        已部署 = true;
+                    }
                     let 列表 = 方案列表(true)?;
                     if 列表.is_empty() {
                         println!("已選方案列表爲空");
@@ -344,7 +354,10 @@ mod tui {
                     false
                 }
                 Some(4) => {
-                    初始化引擎()?;
+                    if !已部署 {
+                        _ = Some(執行tui命令參數(vec!["build".to_string()], host.as_deref(), proxy.as_deref())?);
+                        已部署 = true;
+                    }
                     let 列表 = 方案列表(false)?;
                     if 列表.is_empty() {
                         println!("可添加方案列表爲空");
@@ -372,7 +385,10 @@ mod tui {
                     false
                 }
                 Some(5) => {
-                    初始化引擎()?;
+                    if !已部署 {
+                        _ = Some(執行tui命令參數(vec!["build".to_string()], host.as_deref(), proxy.as_deref())?);
+                        已部署 = true;
+                    }
                     let 列表 = 方案列表(true)?;
                     if 列表.is_empty() {
                         println!("已選方案列表爲空");
