@@ -4,6 +4,11 @@ use rime::{
 };
 use std::ffi::{CStr, CString};
 use std::path::PathBuf;
+use std::sync::Mutex;
+
+// 使用靜態變量保存 CString，確保在整個程序運行期間都有效
+static RIME_SETUP_STRINGS: Mutex<Option<Vec<CString>>> = Mutex::new(None);
+
 #[derive(Default)]
 pub struct 引擎啓動參數 {
     pub 用戶數據場地: PathBuf,
@@ -29,71 +34,118 @@ impl 引擎啓動參數 {
 pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<()> {
     log::debug!("設置引擎啓動參數. 用戶數據場地: {}", 參數.用戶數據場地.display());
     std::fs::create_dir_all(&參數.用戶數據場地)?;
+    
+    // 準備所有需要的 CString，保存到靜態變量中
+    let mut c_strings = Vec::new();
+    
     let 用戶數據場地〇 = CString::new(參數.用戶數據場地.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
-    let 共享數據場地〇 = if let Some(ref 場地) = 參數.共享數據場地 {
+    c_strings.push(用戶數據場地〇);
+    
+    let 共享數據場地_idx = if let Some(ref 場地) = 參數.共享數據場地 {
         std::fs::create_dir_all(場地)?;
-        Some(CString::new(場地.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?)
+        let cstr = CString::new(場地.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
+        c_strings.push(cstr);
+        Some(c_strings.len() - 1)
     } else {
         None
     };
-    let 品名〇 = if let Some(ref 品名) = 參數.品名 {
-        Some(CString::new(品名.as_str())?)
+    
+    let 品名_idx = if let Some(ref 品名) = 參數.品名 {
+        let cstr = CString::new(品名.as_str())?;
+        c_strings.push(cstr);
+        Some(c_strings.len() - 1)
     } else {
-        Some(CString::new(env!("CARGO_PKG_NAME"))?)
+        let cstr = CString::new(env!("CARGO_PKG_NAME"))?;
+        c_strings.push(cstr);
+        Some(c_strings.len() - 1)
     };
-    let 代號〇 = if let Some(ref 代號) = 參數.代號 {
-        Some(CString::new(代號.as_str())?)
+    
+    let 代號_idx = if let Some(ref 代號) = 參數.代號 {
+        let cstr = CString::new(代號.as_str())?;
+        c_strings.push(cstr);
+        Some(c_strings.len() - 1)
     } else {
-        品名〇.clone()
+        品名_idx
     };
-    let 版本〇 = if let Some(ref 版本) = 參數.版本 {
-        Some(CString::new(版本.as_str())?)
+    
+    let 版本_idx = if let Some(ref 版本) = 參數.版本 {
+        let cstr = CString::new(版本.as_str())?;
+        c_strings.push(cstr);
+        Some(c_strings.len() - 1)
     } else {
-        Some(CString::new(env!("CARGO_PKG_VERSION"))?)
+        let cstr = CString::new(env!("CARGO_PKG_VERSION"))?;
+        c_strings.push(cstr);
+        Some(c_strings.len() - 1)
     };
-    let 應用名〇 = 參數.應用名.as_ref().map(|s| CString::new(s.as_str())).transpose()?;
-    let 日誌場地〇 = if let Some(ref p) = 參數.日誌場地 {
-        std::fs::create_dir_all(p)?;
-        Some(CString::new(p.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?)
+    
+    let 應用名_idx = if let Some(ref 應用名) = 參數.應用名 {
+        let cstr = CString::new(應用名.as_str())?;
+        c_strings.push(cstr);
+        Some(c_strings.len() - 1)
     } else {
         None
     };
-    let 預構建固件場地〇 = if let Some(ref p) = 參數.預構建固件場地 {
+    
+    let 日誌場地_idx = if let Some(ref p) = 參數.日誌場地 {
         std::fs::create_dir_all(p)?;
-        Some(CString::new(p.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?)
+        let cstr = CString::new(p.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
+        c_strings.push(cstr);
+        Some(c_strings.len() - 1)
     } else {
         None
     };
-    let 緩存場地〇 = if let Some(ref p) = 參數.緩存場地 {
+    
+    let 預構建固件場地_idx = if let Some(ref p) = 參數.預構建固件場地 {
         std::fs::create_dir_all(p)?;
-        Some(CString::new(p.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?)
+        let cstr = CString::new(p.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
+        c_strings.push(cstr);
+        Some(c_strings.len() - 1)
+    } else {
+        None
+    };
+    
+    let 緩存場地_idx = if let Some(ref p) = 參數.緩存場地 {
+        std::fs::create_dir_all(p)?;
+        let cstr = CString::new(p.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
+        c_strings.push(cstr);
+        Some(c_strings.len() - 1)
     } else {
         None
     };
 
     let mut 啓動參數: RimeTraits = rime_struct_new!();
     啓動參數.data_size = std::mem::size_of::<RimeTraits>() as std::ffi::c_int;
-    啓動參數.shared_data_dir = 共享數據場地〇.as_ref().map_or(用戶數據場地〇.as_ptr(), |s| s.as_ptr());
-    啓動參數.user_data_dir = 用戶數據場地〇.as_ptr();
-    啓動參數.distribution_name = 品名〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
-    啓動參數.distribution_code_name = 代號〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
-    啓動參數.distribution_version = 版本〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
-    if !參數.應用名.is_none() {
-        啓動參數.app_name = 應用名〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+    啓動參數.shared_data_dir = if let Some(idx) = 共享數據場地_idx {
+        c_strings[idx].as_ptr()
+    } else {
+        c_strings[0].as_ptr()  // 用戶數據場地
+    };
+    啓動參數.user_data_dir = c_strings[0].as_ptr();  // 用戶數據場地始終是第一個
+    啓動參數.distribution_name = 品名_idx.map_or(std::ptr::null(), |idx| c_strings[idx].as_ptr());
+    啓動參數.distribution_code_name = 代號_idx.map_or(std::ptr::null(), |idx| c_strings[idx].as_ptr());
+    啓動參數.distribution_version = 版本_idx.map_or(std::ptr::null(), |idx| c_strings[idx].as_ptr());
+    if let Some(idx) = 應用名_idx {
+        啓動參數.app_name = c_strings[idx].as_ptr();
     }
-    if !參數.最小日誌級別.is_none() {
-        啓動參數.min_log_level = 參數.最小日誌級別.unwrap();
+    if let Some(級別) = 參數.最小日誌級別 {
+        啓動參數.min_log_level = 級別;
     }
-    if !參數.日誌場地.is_none() {
-        啓動參數.log_dir = 日誌場地〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+    if let Some(idx) = 日誌場地_idx {
+        啓動參數.log_dir = c_strings[idx].as_ptr();
     }
-    if !參數.預構建固件場地.is_none() {
-        啓動參數.prebuilt_data_dir = 預構建固件場地〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+    if let Some(idx) = 預構建固件場地_idx {
+        啓動參數.prebuilt_data_dir = c_strings[idx].as_ptr();
     }
-    if !參數.緩存場地.is_none() {
-        啓動參數.staging_dir = 緩存場地〇.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+    if let Some(idx) = 緩存場地_idx {
+        啓動參數.staging_dir = c_strings[idx].as_ptr();
     }
+    
+    // 先調用 setup
     rime_api_call!(setup, &mut 啓動參數);
+    
+    // 將 CString 保存到靜態變量中，確保它們在程序運行期間一直有效
+    *RIME_SETUP_STRINGS.lock().unwrap() = Some(c_strings);
+    
     Ok(())
 }
 
