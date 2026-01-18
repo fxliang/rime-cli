@@ -4,6 +4,7 @@ use std::path::Path;
 use std::path::PathBuf;
 #[cfg(windows)]
 use std::process::Command;
+use std::sync::Mutex;
 
 #[cfg(windows)]
 use std::ffi::OsStr;
@@ -380,12 +381,19 @@ pub fn 前端部署() -> anyhow::Result<()> {
 }
 
 pub fn 初始化引擎() -> anyhow::Result<()> {
-    let 用戶數據目錄 = 用戶目錄()
-        .or_else(默認用戶目錄)
-        .map(PathBuf::from)
+    let 用戶數據目錄 = OVERRIDE_USER_DIR
+        .lock()
+        .unwrap()
+        .clone()
+        .or_else(|| 用戶目錄().map(PathBuf::from))
+        .or_else(|| 默認用戶目錄().map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from("."));
     let mut 參數 = crate::rime_levers::引擎啓動參數::新建(用戶數據目錄);
-    參數.共享數據場地 = 共享數據目錄().map(PathBuf::from);
+    參數.共享數據場地 = OVERRIDE_SHARED_DIR
+        .lock()
+        .unwrap()
+        .clone()
+        .or_else(|| 共享數據目錄().map(PathBuf::from));
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
     let logs = PathBuf::from(home.unwrap_or_else(|| ".".into()))
         .join(".rime-cli")
@@ -393,6 +401,17 @@ pub fn 初始化引擎() -> anyhow::Result<()> {
     參數.日誌場地 = Some(logs);
     參數.應用名 = Some("rime-cli".to_string());
     crate::rime_levers::設置引擎啓動參數(&參數)
+}
+
+static OVERRIDE_USER_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
+static OVERRIDE_SHARED_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+pub fn 設置用戶目錄覆蓋(dir: Option<PathBuf>) {
+    *OVERRIDE_USER_DIR.lock().unwrap() = dir;
+}
+
+pub fn 設置共享數據目錄覆蓋(dir: Option<PathBuf>) {
+    *OVERRIDE_SHARED_DIR.lock().unwrap() = dir;
 }
 
 #[cfg(test)]
