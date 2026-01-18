@@ -22,6 +22,14 @@ use client::{*};
 #[derive(Debug, StructOpt)]
 #[structopt(about = "Rime 配方管理器")]
 struct Cli {
+    /// 指定用户数据目录，覆盖平台默认值
+    #[structopt(long = "user-data-dir", parse(from_os_str))]
+    user_data_dir: Option<PathBuf>,
+
+    /// 指定共享数据目录，覆盖平台默认值
+    #[structopt(long = "shared-data-dir", parse(from_os_str))]
+    shared_data_dir: Option<PathBuf>,
+
     #[structopt(subcommand)]
     command: Option<子命令>,
 }
@@ -91,6 +99,14 @@ fn main() -> anyhow::Result<()> {
 
     let cli = Cli::from_args();
     log::debug!("參數: {:?}", cli.command);
+
+    // 如果通过 CLI 提供了目录覆盖，则在调用任何初始化之前设置覆盖
+    if let Some(ref user_dir) = cli.user_data_dir {
+        設置用戶目錄覆蓋(Some(user_dir.clone()));
+    }
+    if let Some(ref shared_dir) = cli.shared_data_dir {
+        設置共享數據目錄覆蓋(Some(shared_dir.clone()));
+    }
 
     match cli.command {
         Some(命令行參數) => 執行命令(命令行參數, false),
