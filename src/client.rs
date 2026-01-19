@@ -326,11 +326,21 @@ static OVERRIDE_USER_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
 static OVERRIDE_SHARED_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 pub fn 設置用戶目錄覆蓋(dir: Option<PathBuf>) {
-    *OVERRIDE_USER_DIR.lock().unwrap() = dir;
+    *OVERRIDE_USER_DIR.lock().unwrap() = dir.clone();
+    if let Some(d) = dir {
+        log::debug!("設置用戶目錄覆蓋: {}", d.to_string_lossy());
+    } else {
+        log::debug!("清除了用戶目錄覆蓋");
+    }
 }
 
 pub fn 設置共享數據目錄覆蓋(dir: Option<PathBuf>) {
-    *OVERRIDE_SHARED_DIR.lock().unwrap() = dir;
+    *OVERRIDE_SHARED_DIR.lock().unwrap() = dir.clone();
+    if let Some(d) = dir {
+        log::debug!("設置共享數據目錄覆蓋: {}", d.to_string_lossy());
+    } else {
+        log::debug!("清除了共享數據目錄覆蓋");
+    }
 }
 
 #[cfg(test)]
