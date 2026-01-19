@@ -74,7 +74,12 @@ struct Cli {
     user_data_dir: Option<PathBuf>,
 
     /// 指定共享数据目录，覆盖平台默认值
-    #[structopt(long = "shared-data-dir", short = "s", parse(from_os_str), global(true))]
+    #[structopt(
+        long = "shared-data-dir",
+        short = "s",
+        parse(from_os_str),
+        global(true)
+    )]
     shared_data_dir: Option<PathBuf>,
     #[structopt(subcommand)]
     command: Option<子命令>,
@@ -235,12 +240,10 @@ fn 執行命令(
             if !不下載 {
                 下載配方包(&衆配方, &場地.下載根目錄(), &下載參數)?;
             }
-            #[cfg(windows)]
-            let 默認用戶數據目錄 = client::默認用戶目錄();
-            #[cfg(windows)]
-            let 用戶數據目錄 = client::用戶目錄().or(默認用戶數據目錄).map(PathBuf::from);
-            #[cfg(not(windows))]
-            let 用戶數據目錄 = client::用戶目錄().map(PathBuf::from);
+            let 用戶數據目錄 = client::有效用戶目錄()
+                .ok()
+                .map(PathBuf::from)
+                .or_else(|| client::默認用戶目錄().map(PathBuf::from));
             for 配方 in &衆配方 {
                 安裝配方(配方, &場地.下載根目錄(), &場地.源碼場地, &場地.整備場地)?;
                 if let Some(用戶目錄) = &用戶數據目錄 {
