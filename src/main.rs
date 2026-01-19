@@ -70,11 +70,11 @@ struct Cli {
     #[structopt(flatten)]
     場地: 場地參數,
     /// 指定用户数据目录，覆盖平台默认值
-    #[structopt(long = "user-data-dir", parse(from_os_str))]
+    #[structopt(long = "user-data-dir", short = "u", parse(from_os_str), global(true))]
     user_data_dir: Option<PathBuf>,
 
     /// 指定共享数据目录，覆盖平台默认值
-    #[structopt(long = "shared-data-dir", parse(from_os_str))]
+    #[structopt(long = "shared-data-dir", short = "s", parse(from_os_str), global(true))]
     shared_data_dir: Option<PathBuf>,
     #[structopt(subcommand)]
     command: Option<子命令>,
