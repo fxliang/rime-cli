@@ -215,9 +215,12 @@ pub fn 加入輸入方案列表(衆輸入方案: &[String]) -> anyhow::Result<()
         默認配置的自定義〇.as_ptr(),
         &mut 自定義配置
     );
-    let mut 既有方案 = vec![];
     let 方案列表〇 = CString::new("patch/schema_list")?;
+    #[cfg(test)]
+    let mut 既有方案 = vec![];
+    #[cfg(test)]
     let 既有方案數 = rime_api_call!(config_list_size, &mut 自定義配置, 方案列表〇.as_ptr()) as u64;
+    #[cfg(test)]
     for i in 0..既有方案數 {
         let 列表項〇 = CString::new(format!("patch/schema_list/@{}/schema", i))?;
         let 方案 = rime_api_call!(config_get_cstring, &mut 自定義配置, 列表項〇.as_ptr());
@@ -225,14 +228,28 @@ pub fn 加入輸入方案列表(衆輸入方案: &[String]) -> anyhow::Result<()
             既有方案.push(unsafe { CStr::from_ptr(方案) }.to_str()?.to_owned());
         }
     }
-    let 新增方案 = 衆輸入方案.iter().filter(|方案| !既有方案.contains(方案));
-    let 新增列表項〇 = CString::new("patch/schema_list/@next/schema")?;
-    for 方案 in 新增方案 {
+    #[cfg(not(test))]
+    let 既有方案 = 方案列表(true)?
+        .into_iter()
+        .map(|s| s.split_whitespace().next().unwrap_or("").to_string())
+        .collect::<Vec<_>>();
+
+    // 合併 既有方案 和 衆輸入方案，去重並重建配置列表（与從方案列表中刪除的处理方式一致）
+    let mut 合併列表 = 既有方案.clone();
+    for 方案 in 衆輸入方案 {
+        if !合併列表.contains(方案) {
+            合併列表.push(方案.clone());
+        }
+    }
+
+    rime_api_call!(config_create_list, &mut 自定義配置, 方案列表〇.as_ptr());
+    for (i, 方案) in 合併列表.iter().enumerate() {
+        let 列表項〇 = CString::new(format!("patch/schema_list/@{}/schema", i))?;
         let 方案〇 = CString::new(方案.to_owned())?;
         rime_api_call!(
             config_set_string,
             &mut 自定義配置,
-            新增列表項〇.as_ptr(),
+            列表項〇.as_ptr(),
             方案〇.as_ptr()
         );
     }
