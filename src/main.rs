@@ -66,6 +66,7 @@ enum 子命令 {
     },
     /// 更新引擎庫
     Get {
+        /// 目標版本標籤，如1.15.0（留空表示最新）
         tag: Option<String>,
         #[structopt(flatten)]
         下載參數: 下載參數,
