@@ -263,6 +263,13 @@ pub fn 用戶目錄() -> Option<String> {
         todo!("家路徑異常");
     }
 }
+
+pub fn 有效用戶目錄() -> anyhow::Result<String> {
+    OVERRIDE_USER_DIR.lock().unwrap().clone()
+        .or_else(|| 用戶目錄().map(PathBuf::from))
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| anyhow::anyhow!("無法獲取用戶目錄"))
+}
  
 #[cfg(not(windows))]
 pub fn 默認用戶目錄() -> Option<String> {

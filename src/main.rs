@@ -178,7 +178,7 @@ fn 執行命令(命令行參數: 子命令, 圖形界面: bool) -> anyhow::Resul
                 .map(|rx| 配方名片::from(rx.as_str()))
                 .collect::<Vec<_>>();
             下載配方包(&衆配方, 下載參數)?;
-            let 用戶數據目錄 = 用戶目錄().unwrap_or(默認用戶目錄().unwrap());
+            let 用戶數據目錄 = 有效用戶目錄().unwrap_or(默認用戶目錄().unwrap());
 
             for 配方 in &衆配方 {
                 安裝配方(配方, &PathBuf::from(&用戶數據目錄))?;
