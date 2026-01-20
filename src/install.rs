@@ -108,6 +108,24 @@ pub fn 安裝配方到用戶目錄(
         }
         let source = item.path();
         let target = 用戶目錄.join(name);
+        if item.file_type()?.is_file()
+            && item
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case("default.custom.yaml")
+            && target.exists()
+        {
+            println!(
+                "發現已有 default.custom.yaml: {}，是否覆蓋? (y/yes 覆蓋，其他跳過)",
+                target.display()
+            );
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if !matches!(input.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+                println!("跳過覆蓋自定義配置文件: {}", target.display());
+                continue;
+            }
+        }
         if item.file_type()?.is_dir() {
             遞歸複製目錄(&source, &target)?;
         } else if item.file_type()?.is_file() {
