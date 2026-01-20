@@ -22,8 +22,8 @@ fn 遞歸複製目錄(源: &PathBuf, 目標: &PathBuf) -> anyhow::Result<()> {
         .with_context(|| format!("讀取目錄失敗: {:?}", 源))?
     {
         // 忽略.git .github README.md等文件,忽略大小寫
-        if let Ok(entry) = &項目 {
-            let 名字 = entry.file_name();
+        if let Ok(入口) = &項目 {
+            let 名字 = 入口.file_name();
             let 名字 = 名字.to_string_lossy().to_lowercase();
             if 名字 == ".git"
                 || 名字 == ".github"
@@ -31,8 +31,19 @@ fn 遞歸複製目錄(源: &PathBuf, 目標: &PathBuf) -> anyhow::Result<()> {
                 || 名字 == "license"
                 || 名字 == "license.txt"
                 || 名字 == "authors"
+                || 名字 == ".github"
             {
                 continue;
+            }
+            if 名字 == "default.custom.yaml" {
+                println!("發現自定義配置文件: {:?},可能會影響全局設定， 是否覆蓋? (y/yes 覆蓋, 默認其他 跳過)", 入口.path());
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input).unwrap();
+                let input = input.trim().to_lowercase();
+                if !(input == "y" || input == "yes") {
+                    println!("跳過覆蓋自定義配置文件: {:?}", 入口.path());
+                    continue;
+                }
             }
         }
         let 項目 = 項目.with_context(|| "讀取目錄項失敗")?;
