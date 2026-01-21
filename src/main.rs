@@ -19,6 +19,7 @@ use rime_levers::{
 
 use client::{*};
 
+
 #[derive(Debug, StructOpt)]
 #[structopt(about = "Rime 配方管理器")]
 struct Cli {
@@ -202,6 +203,60 @@ fn 執行命令(命令行參數: 子命令, 圖形界面: bool) -> anyhow::Resul
             選擇輸入方案(&schema)?;
         }
         子命令::Get { tag, 下載參數 } => {
+            #[cfg(windows)]
+            {
+                use windows::Win32::UI::Shell::ShellExecuteW;
+                use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+                use windows::core::{PCWSTR};
+                use std::os::windows::ffi::OsStrExt;
+                // 获取小狼毫程序目录，检查是否需要管理员权限
+                let 程序目錄 = 獲取小狼毫程序目錄().ok_or_else(|| anyhow::anyhow!("无法获取小狼毫程序目录"))?;
+                if client::需要管理員權限(&程序目錄)? {
+                    // 以管理员权限重新运行
+                    let exe_path = std::env::current_exe()?.to_string_lossy().to_string();
+                    let mut args_vec = vec!["get".to_string()];
+                    if let Some(t) = tag {
+                        args_vec.push(t);
+                    }
+                    if let Some(h) = 下載參數.倉庫域名() {
+                        args_vec.push("--host".to_string());
+                        args_vec.push(h.to_string());
+                    }
+                    if let Some(p) = 下載參數.代理地址() {
+                        args_vec.push("--proxy".to_string());
+                        args_vec.push(p.to_string());
+                    }
+                    let args_str = args_vec.join(" ");
+
+                    log::debug!("elevate: exe={}, args={}", exe_path, args_str);
+                    let exe_w: Vec<u16> = std::ffi::OsStr::new(&exe_path)
+                        .encode_wide()
+                        .chain(std::iter::once(0))
+                        .collect();
+                    let args_w: Vec<u16> = std::ffi::OsStr::new(&args_str)
+                        .encode_wide()
+                        .chain(std::iter::once(0))
+                        .collect();
+
+                    unsafe {
+                        let res = ShellExecuteW(
+                            None,
+                            windows::core::w!("runas"),
+                            PCWSTR::from_raw(exe_w.as_ptr()),
+                            PCWSTR::from_raw(args_w.as_ptr()),
+                            PCWSTR::null(),
+                            SW_SHOWNORMAL,
+                        );
+                        let code = res.0 as isize;
+                        if code <= 32 {
+                            eprintln!("ShellExecuteW failed: {}", code);
+                        } else {
+                            log::debug!("elevate: ShellExecuteW ok: {}", code);
+                        }
+                    }
+                    return Ok(());
+                }
+            }
             let 目標版本 = tag.unwrap_or("".to_string());
             get_rime::更新引擎庫(&目標版本, &下載參數)?;
         }

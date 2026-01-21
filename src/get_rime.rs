@@ -28,8 +28,10 @@ struct 版本信息 {
 async fn 全部附件下載鏈接清單(版本: Option<&str>, 代理: Option<&str>, 令牌: Option<&str>) -> Vec<附件信息> {
     let 版本名 = 版本.unwrap_or("");
     let 接口鏈接 = if 版本名.is_empty() {
+        println!(" 獲取版本: {}", "最新release版");
         "https://api.github.com/repos/rime/librime/releases/latest".to_string()
     } else {
+        println!(" 獲取版本: {}", 版本名);
         format!("https://api.github.com/repos/rime/librime/releases/tags/{}", &版本名)
     };
     let mut 附件下載鏈接清單: Vec<附件信息> = Vec::new();
@@ -234,7 +236,7 @@ fn 解壓並更新引擎(文件名: &String) -> anyhow::Result<()>{
                 let 目錄名 = 文件名.replace(".7z", "");
                 // 解壓壓縮包
                 sevenz_rust2::decompress_file(&文件名, &目錄名).expect("完成!");
-                println!(" '{}' 已解壓到 '{}'", &文件名, &目錄名);
+                println!(" '{}' 已解壓", &文件名);
                 // 退出小狼毫算法服務
                 let _ = std::process::Command::new(&小狼毫算法服務)
                     .arg("/q")
@@ -250,7 +252,7 @@ fn 解壓並更新引擎(文件名: &String) -> anyhow::Result<()>{
                 let 自身所在目錄 = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf()));
                 let 當前工作目錄 = std::env::current_dir().ok();
                 let 目標所在目錄 = 目標庫文件.parent().map(|p| p.to_path_buf());
-                let 需要延後複製 = match &目標所在目錄 {
+                let 當前在小狼毫目錄中 = match &目標所在目錄 {
                     Some(tgt) => {
                         自身所在目錄
                             .as_ref()
@@ -263,94 +265,53 @@ fn 解壓並更新引擎(文件名: &String) -> anyhow::Result<()>{
                     }
                     None => false,
                 };
-                let 選項 = if 需要延後複製 {
-                    println!(" 檢測到當前程序與目標 rime.dll 在同一目錄，將在程序退出後替換 rime.dll 並重啓 Weasel。");
-                    提權複製選項 {
-                        隱藏窗口: true,
-                        等待完成: false,
-                        父進程: Some(std::process::id()),
-                        重啟服務: Some(小狼毫算法服務.clone()),
-                        驗證哈希: true,
+                if 當前在小狼毫目錄中 {
+                    let _ = 卸載引擎庫();
+                }
+                let 舊哈希 = 文件_sha256(&目標庫文件).ok();
+
+                match std::fs::copy(&源庫文件, &目標庫文件) {
+                    Ok(_) => { println!(" 中州韻引擎 '{}' 已更新", &目標庫文件.display()) },
+                    Err(e) => { eprintln!("複製文件時發生錯誤: {}", e) }
+                }
+
+                let 新哈希 = 文件_sha256(&目標庫文件).ok();
+                match (舊哈希, 新哈希) {
+                    (Some(舊), Some(新)) if 舊 == 新 => {
+                        println!(" 中州韻引擎 '{}' 看起來未變 (哈希相同)", &目標庫文件.display());
                     }
-                } else {
-                    提權複製選項 {
-                        隱藏窗口: true,
-                        等待完成: true,
-                        父進程: None,
-                        重啟服務: None,
-                        驗證哈希: false,
+                    _ => {
+                        println!(" 中州韻引擎 '{}' 已更新", &目標庫文件.display());
                     }
-                };
-                if 需要延後複製 {
-                    執行提權複製腳本(&源庫文件, &目標庫文件, 選項)?;
-                    println!(" 已啓動提權延後複製流程，現在將退出當前程序以完成更新。");
-                    let mut input = String::new();
-                    println!(" 請按任意鍵退出...");
-                    let _ = std::io::stdin().read_line(&mut input);
-                    std::process::exit(0);
-                } else {
-                    let 舊哈希 = 文件_sha256(&目標庫文件).ok();
-                    執行提權複製腳本(&源庫文件, &目標庫文件, 選項)
-                        .map_err(|e| {
-                            eprintln!(" 無法複製文件到目標位置 '{}': {}", &目標庫文件.display(), e);
-                            e
-                        })?;
-                    let 源哈希 = 文件_sha256(&源庫文件).ok();
-                    let 新哈希 = 文件_sha256(&目標庫文件).ok();
-                    match (&源哈希, &新哈希) {
-                        (Some(源), Some(新)) if 源 != 新 => {
-                            eprintln!( " 文件複製失敗: 源與目標哈希不匹配 (源: {}, 目標: {})", 源, 新);
-                            println!(" 將在程序退出後嘗試延後替換並重啓 Weasel。");
-                            let 選項 = 提權複製選項 {
-                                隱藏窗口: true,
-                                等待完成: false,
-                                父進程: Some(std::process::id()),
-                                重啟服務: Some(小狼毫算法服務.clone()),
-                                驗證哈希: true,
-                            };
-                            執行提權複製腳本(&源庫文件, &目標庫文件, 選項)
-                                .map_err(|e| {
-                                    eprintln!(" 無法複製文件到目標位置 '{}': {}", &目標庫文件.display(), e);
-                                    e
-                                })?;
-                            println!(" 已啓動提權延後複製流程，請退出當前程序以完成更新。");
-                            return Ok(());
-                        }
-                        _ => {}
-                    }
-                    match (舊哈希, 新哈希) {
-                        (Some(舊), Some(新)) if 舊 == 新 => {
-                            println!(" 中州韻引擎 '{}' 看起來未變 (哈希相同)", &目標庫文件.display());
-                        }
-                        _ => {
-                            println!(" 中州韻引擎 '{}' 已更新", &目標庫文件.display());
-                        }
-                    }
-                    // 啓動小狼毫算法服務
-                    let _ = std::process::Command::new(&小狼毫算法服務)
+                }
+                // 啓動小狼毫算法服務
+                let _ = std::process::Command::new(&小狼毫算法服務)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()?;
+                println!(" 小狼毫服務 '{}' 已重啓", &小狼毫算法服務.display());
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                // 在運行算法服務同目錄下的WeaselDeployer.exe執行/deploy參數
+                let 小狼毫部署器 = Path::new(&小狼毫根目錄).join("WeaselDeployer.exe");
+                if 小狼毫部署器.exists() {
+                    let _ = std::process::Command::new(&小狼毫部署器)
+                        .arg("/deploy")
                         .stdout(std::process::Stdio::null())
                         .stderr(std::process::Stdio::null())
-                        .spawn()?;
-                    println!(" 小狼毫服務 '{}' 已重啓", &小狼毫算法服務.display());
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                    // 在運行算法服務同目錄下的WeaselDeployer.exe執行/deploy參數
-                    let 小狼毫部署器 = Path::new(&小狼毫根目錄).join("WeaselDeployer.exe");
-                    if 小狼毫部署器.exists() {
-                        let _ = std::process::Command::new(&小狼毫部署器)
-                            .arg("/deploy")
-                            .stdout(std::process::Stdio::null())
-                            .stderr(std::process::Stdio::null())
-                            .spawn()?
-                            .wait()?;
-                        println!(" 小狼毫部署器 '{}' 已執行 /deploy", &小狼毫部署器.display());
-                    }
-                    // 刪除臨時目錄
-                    match std::fs::remove_dir_all(&目錄名) {
-                        Ok(_) => { println!(" 臨時目錄 '{}' 已刪除", &目錄名); },
-                        Err(e) => { anyhow::bail!(" 無法刪除目錄 '{}', {}", &目錄名, e); },
-                    }
-                    Ok(())
+                        .spawn()?
+                        .wait()?;
+                    println!(" 小狼毫部署器 '{}' 已執行 /deploy", &小狼毫部署器.display());
                 }
+                // 刪除臨時目錄
+                match std::fs::remove_dir_all(&目錄名) {
+                    Ok(_) => { println!(" 臨時目錄 '{}' 已刪除", &目錄名); },
+                    Err(e) => { anyhow::bail!(" 無法刪除目錄 '{}', {}", &目錄名, e); },
+                }
+                if 當前在小狼毫目錄中 {
+                    //let _  = 初始化庫();
+                    let _ = 初始化引擎();
+                }
+                Ok(())
             } else {
                 anyhow::bail!("WeaselServer.exe 未找到.");
             }

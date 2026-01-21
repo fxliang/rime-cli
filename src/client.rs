@@ -2,8 +2,6 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 #[cfg(windows)]
 use std::path::Path;
-#[cfg(windows)]
-use std::process::Command;
 use anyhow;
 
 #[cfg(windows)]
@@ -17,156 +15,6 @@ use windows_version::OsVersion;
 #[cfg(windows)]
 use winreg::RegKey;
 use crate::rime_levers::{*};
-
-#[cfg(windows)]
-fn 查找_powershell() -> Option<PathBuf> {
-    let mut 候選: Vec<PathBuf> = Vec::new();
-    if let Some(root) = std::env::var_os("SystemRoot") {
-        let mut p = PathBuf::from(root);
-        p.push("System32\\WindowsPowerShell\\v1.0\\powershell.exe");
-        候選.push(p);
-    }
-    候選.push(PathBuf::from("powershell.exe"));
-    候選.push(PathBuf::from("pwsh.exe"));
-    if let Some(path_var) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&path_var) {
-            候選.push(dir.join("powershell.exe"));
-            候選.push(dir.join("pwsh.exe"));
-        }
-    }
-    候選.into_iter().find(|p| p.is_file())
-}
-
-#[cfg(windows)]
-pub struct 提權複製選項 {
-    pub 隱藏窗口: bool,
-    pub 等待完成: bool,
-    pub 父進程: Option<u32>,
-    pub 重啟服務: Option<PathBuf>,
-    pub 驗證哈希: bool,
-}
-
-#[cfg(windows)]
-pub fn 執行提權複製腳本(來源: &Path, 目標: &Path, 選項: 提權複製選項) -> anyhow::Result<()> {
-    if !來源.exists() {
-        anyhow::bail!(format!("源文件不存在: {}", 來源.display()));
-    }
-    let ps = 查找_powershell().ok_or_else(|| anyhow::anyhow!("未找到 PowerShell，可手動複製 rime.dll"))?;
-    let 來源路徑 = 來源.canonicalize()
-        .unwrap_or_else(|_| 來源.to_path_buf())
-        .to_string_lossy()
-        .replace("'", "''");
-    let 目標路徑 = 目標.canonicalize()
-        .unwrap_or_else(|_| 目標.to_path_buf())
-        .to_string_lossy()
-        .replace("'", "''");
-
-    let 哈希函數 = if 選項.驗證哈希 {
-        "function Hash($p){ $sha=[System.Security.Cryptography.SHA256]::Create(); $fs=[System.IO.File]::OpenRead($p); try { ($sha.ComputeHash($fs) | ForEach-Object { $_.ToString('x2') }) -join '' } finally { $fs.Dispose(); $sha.Dispose() } };"
-    } else { "" };
-
-    let 等待父進程 = match 選項.父進程 {
-        Some(pid) => format!("Wait-Process -Id {} -ErrorAction SilentlyContinue; ", pid),
-        None => "".to_string(),
-    };
-
-    let 驗證腳本 = if 選項.驗證哈希 {
-        "\
-        $srcHash = Hash $source; \
-        $dstHash = Hash $dest; \
-        if ($srcHash -ne $dstHash) { throw \"hash mismatch src=$srcHash dst=$dstHash\" };"
-    } else {
-        ""
-    };
-
-    let 重啟服務腳本 = if let Some(svc) = 選項.重啟服務 {
-        let svc_path = svc.to_string_lossy().replace("'", "''");
-        // 隐藏启动 WeaselServer，短等待后检测进程是否存在，若不存在则改为可见模式重试；同时在同目录执行 WeaselDeployer.exe /deploy（若存在）。
-        format!(
-            " if (Test-Path '{svc}') {{ \n\
-                $dir = Split-Path -Parent '{svc}'; \n\
-                $name = [System.IO.Path]::GetFileNameWithoutExtension('{svc}'); \n\
-                Start-Process -FilePath '{svc}' -WorkingDirectory $dir -WindowStyle Hidden | Out-Null; \n\
-                Start-Sleep -Milliseconds 500; \n\
-                if (-not (Get-Process -Name $name -ErrorAction SilentlyContinue)) {{ \n\
-                    Start-Process -FilePath '{svc}' -WorkingDirectory $dir -WindowStyle Normal | Out-Null; \n\
-                }}; \n\
-                $deployer = Join-Path $dir 'WeaselDeployer.exe'; \n\
-                if (Test-Path $deployer) {{ \n\
-                    $psi = New-Object System.Diagnostics.ProcessStartInfo; \n\
-                    $psi.FileName = $deployer; \n\
-                    $psi.Arguments = '/deploy'; \n\
-                    $psi.WorkingDirectory = $dir; \n\
-                    $proc = [System.Diagnostics.Process]::Start($psi); \n\
-                    if ($proc) {{ $proc.WaitForExit(); }} \n\
-                }}; \n\
-            }};",
-            svc = svc_path,
-        )
-    } else {
-        "".to_string()
-    };
-
-    
-
-    let 內層腳本 = format!(
-        "\
-        $ErrorActionPreference='Stop'; \
-        {hash_fn} \
-        $source='{source}'; \
-        $dest='{dest}'; \
-        {wait_parent}New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null; \
-        Copy-Item -LiteralPath $source -Destination $dest -Force;{verify}{restart}",
-        hash_fn = 哈希函數,
-        source = 來源路徑,
-        dest = 目標路徑,
-        wait_parent = 等待父進程,
-        verify = 驗證腳本,
-        restart = 重啟服務腳本,
-    );
-
-    let 內層腳本_轉義 = 內層腳本.replace("'", "''");
-    let ps_cmd = ps.to_string_lossy().replace("'", "''");
-    let window_flag = if 選項.隱藏窗口 { "-WindowStyle Hidden " } else { "" };
-    let wait_flag = if 選項.等待完成 { " -Wait" } else { "" };
-    // 如果目標路徑不需要提權，則不需要提權啟動
-    let 需要提權 = 目標.metadata().map(|m| m.permissions().readonly()).unwrap_or(true);
-    let 提權命令 = if 需要提權 {
-        format!(
-            "Start-Process -FilePath '{ps}' -Verb RunAs {window}-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','{script}'{wait}",
-            ps = ps_cmd,
-            window = window_flag,
-            script = 內層腳本_轉義,
-            wait = wait_flag,
-        )
-    } else {
-        // 不需要提權，直接執行 PowerShell 命令
-        format!(
-            "& '{ps}' -NoProfile -ExecutionPolicy Bypass -Command '{script}'",
-            ps = ps_cmd,
-            script = 內層腳本_轉義,
-        )
-    };
-
-    if 選項.等待完成 {
-        let 狀態 = Command::new(&ps)
-            .arg("-NoProfile")
-            .arg("-ExecutionPolicy").arg("Bypass")
-            .arg("-Command").arg(提權命令)
-            .status()?;
-        if !狀態.success() {
-            anyhow::bail!("提權腳本執行失敗，請允許提權或手動複製。");
-        }
-    } else {
-        Command::new(&ps)
-            .arg("-NoProfile")
-            .arg("-ExecutionPolicy").arg("Bypass")
-            .arg("-Command").arg(提權命令)
-            .spawn()?;
-    }
-
-    Ok(())
-}
 
 #[cfg(windows)]
 pub fn 路徑相同(左: &Path, 右: &Path) -> bool {
@@ -245,6 +93,29 @@ pub fn 默認用戶目錄() -> Option<String> {
         Some(路徑.to_string_lossy().to_string())
     } else {
         None
+    }
+}
+
+#[cfg(windows)]
+pub fn 卸載引擎庫() -> anyhow::Result<()> {
+    use rime::dynload;
+    if rime::IS_DYNAMIC_LOAD {
+        rime::unload_librime!();
+    }
+    Ok(())
+
+}
+
+#[cfg(windows)]
+pub fn 需要管理員權限(目錄: &str) -> anyhow::Result<bool> {
+    let 程序目錄 = Path::new(目錄);
+    let 測試文件 = 程序目錄.join("rime_cli_test_write.txt");
+    match std::fs::File::create(&測試文件) {
+        Ok(_) => {
+            std::fs::remove_file(&測試文件).ok();
+            Ok(false)
+        },
+        Err(_) => Ok(true),
     }
 }
 
