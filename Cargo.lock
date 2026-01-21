@@ -1009,9 +1009,11 @@ dependencies = [
 [[package]]
 name = "librime-sys"
 version = "0.1.0"
-source = "git+https://github.com/lotem/librime-sys.git#46580040c9ed3250b8256daacc376b241f77ddfc"
+source = "git+https://github.com/fxliang/librime-sys.git?branch=dynload#fce518325d05295a4936d1d7e88ba3022fce7ea9"
 dependencies = [
  "bindgen",
+ "lazy_static",
+ "libloading",
 ]
 
 [[package]]

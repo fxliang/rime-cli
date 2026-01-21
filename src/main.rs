@@ -273,7 +273,90 @@ fn 執行命令(
         子命令::Deploy => 部署輸入法固件(&場地.整備場地, &場地.目標場地)?,
         子命令::Test { schemata } => 測試輸入法固件(&場地.整備場地, &schemata)?,
         子命令::Get { tag, 下載參數 } => {
-            let 目標版本 = tag.unwrap_or("".to_string());
+            #[cfg(windows)]
+            {
+                use std::os::windows::ffi::OsStrExt;
+                use windows::core::PCWSTR;
+                use windows::Win32::UI::Shell::ShellExecuteW;
+                use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+                // 获取小狼毫程序目录，检查是否需要管理员权限
+                let 程序目錄 = 獲取小狼毫程序目錄()
+                    .ok_or_else(|| anyhow::anyhow!("无法获取小狼毫程序目录"))?;
+                if client::需要管理員權限(&程序目錄)? {
+                    // 以管理员权限重新运行
+                    let exe_path = std::env::current_exe()?.to_string_lossy().to_string();
+                    let mut args_vec = Vec::new();
+                    for (option, value) in [
+                        ("--download-dir", Some(場地.下載場地.as_path())),
+                        ("--source-dir", Some(場地.源碼場地.as_path())),
+                        ("--staging-dir", Some(場地.整備場地.as_path())),
+                        ("--target-dir", Some(場地.目標場地.as_path())),
+                    ] {
+                        if let Some(value) = value {
+                            args_vec.push(option.to_string());
+                            args_vec.push(value.to_string_lossy().into_owned());
+                        }
+                    }
+                    if let Ok(user_dir) = client::有效用戶目錄() {
+                        args_vec.push("--user-data-dir".to_string());
+                        args_vec.push(user_dir);
+                    }
+                    if let Some(shared_dir) = client::有效共享數據目錄() {
+                        args_vec.push("--shared-data-dir".to_string());
+                        args_vec.push(shared_dir.to_string_lossy().into_owned());
+                    }
+                    args_vec.push("get".to_string());
+                    if let Some(t) = &tag {
+                        args_vec.push(t.clone());
+                    }
+                    if let Some(h) = 下載參數.倉庫域名() {
+                        args_vec.push("--host".to_string());
+                        args_vec.push(h.to_string());
+                    }
+                    if let Some(p) = 下載參數.代理地址() {
+                        args_vec.push("--proxy".to_string());
+                        args_vec.push(p.to_string());
+                    }
+                    if let Some(token) = 下載參數.令牌() {
+                        args_vec.push("--token".to_string());
+                        args_vec.push(token.to_string());
+                    }
+                    let args_str = args_vec
+                        .iter()
+                        .map(|arg| format!("\"{}\"", arg.replace('"', "\\\"")))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+
+                    log::debug!("elevate: exe={}, args={}", exe_path, args_str);
+                    let exe_w: Vec<u16> = std::ffi::OsStr::new(&exe_path)
+                        .encode_wide()
+                        .chain(std::iter::once(0))
+                        .collect();
+                    let args_w: Vec<u16> = std::ffi::OsStr::new(&args_str)
+                        .encode_wide()
+                        .chain(std::iter::once(0))
+                        .collect();
+
+                    unsafe {
+                        let res = ShellExecuteW(
+                            None,
+                            windows::core::w!("runas"),
+                            PCWSTR::from_raw(exe_w.as_ptr()),
+                            PCWSTR::from_raw(args_w.as_ptr()),
+                            PCWSTR::null(),
+                            SW_SHOWNORMAL,
+                        );
+                        let code = res.0 as isize;
+                        if code <= 32 {
+                            eprintln!("ShellExecuteW failed: {}", code);
+                        } else {
+                            log::debug!("elevate: ShellExecuteW ok: {}", code);
+                        }
+                    }
+                    return Ok(());
+                }
+            }
+            let 目標版本 = tag.unwrap_or_default();
             get_rime::更新引擎庫(&目標版本, &下載參數)?;
         }
         #[cfg(feature = "tui")]
