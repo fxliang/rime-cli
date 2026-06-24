@@ -1,5 +1,5 @@
 use crate::app::{執行命令, 子命令};
-use crate::client::初始化引擎;
+use crate::client::{初始化引擎, 啓動上下文};
 use crate::download::{下載參數, 同步rppi索引};
 use crate::rime_levers::{方案列表, 檢查默認設置自定義文件};
 use dialoguer::console::{style, Term};
@@ -77,7 +77,7 @@ fn 保存tui配置(配置: &Tui配置) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn 進入tui() -> anyhow::Result<()> {
+pub fn 進入tui(上下文: 啓動上下文) -> anyhow::Result<()> {
     let 主題 = ColorfulTheme::default();
     let 終端 = Term::stdout();
     let mut 配置 = 讀取tui配置()?;
@@ -86,7 +86,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
     let mut rppi索引: Option<PathBuf> = None;
     let mut 狀態: Option<String> = None;
     let mut 已部署 = false;
-    初始化引擎()?;
+    初始化引擎(&上下文)?;
 
     // 舊 librime 在 default.custom.yaml 不存在時會導致獲取列表失敗。
     檢查默認設置自定義文件();
@@ -116,6 +116,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
         let 應退出 = match sel {
             Some(0) => {
                 if let Some(msg) = 處理下載或安裝(
+                    &上下文,
                     配方操作::Download,
                     &主題,
                     &終端,
@@ -129,6 +130,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
             }
             Some(1) => {
                 if let Some(msg) = 處理下載或安裝(
+                    &上下文,
                     配方操作::Install,
                     &主題,
                     &終端,
@@ -147,6 +149,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
                     None => continue 'tui,
                 };
                 狀態 = Some(執行tui命令(
+                    &上下文,
                     子命令::Get {
                         tag: 非空或無(tag),
                         下載參數: 下載參數::new(host.clone(), proxy.clone(), None),
@@ -157,7 +160,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
             }
             Some(3) => {
                 if !已部署 {
-                    _ = Some(執行tui命令(子命令::Build, "build")?);
+                    _ = Some(執行tui命令(&上下文, 子命令::Build, "build")?);
                     已部署 = true;
                 }
                 let 列表 = 方案列表(true)?;
@@ -182,6 +185,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
                 };
                 if !方案.is_empty() {
                     狀態 = Some(執行tui命令(
+                        &上下文,
                         子命令::Select {
                             schema: 方案.clone(),
                         },
@@ -192,7 +196,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
             }
             Some(4) => {
                 if !已部署 {
-                    _ = Some(執行tui命令(子命令::Build, "build")?);
+                    _ = Some(執行tui命令(&上下文, 子命令::Build, "build")?);
                     已部署 = true;
                 }
                 let 列表 = 方案列表(false)?;
@@ -217,6 +221,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
                 };
                 if !方案.is_empty() {
                     狀態 = Some(執行tui命令(
+                        &上下文,
                         子命令::Add {
                             schemata: vec![方案.clone()],
                         },
@@ -227,7 +232,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
             }
             Some(5) => {
                 if !已部署 {
-                    _ = Some(執行tui命令(子命令::Build, "build")?);
+                    _ = Some(執行tui命令(&上下文, 子命令::Build, "build")?);
                     已部署 = true;
                 }
                 let 列表 = 方案列表(true)?;
@@ -253,6 +258,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
                 };
                 if !方案.is_empty() {
                     狀態 = Some(執行tui命令(
+                        &上下文,
                         子命令::Remove {
                             schemata: vec![方案.clone()],
                         },
@@ -276,6 +282,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
                 };
                 if !(config.trim().is_empty() || key.trim().is_empty() || value.trim().is_empty()) {
                     狀態 = Some(執行tui命令(
+                        &上下文,
                         子命令::Patch {
                             config: config.clone(),
                             key: key.clone(),
@@ -287,7 +294,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
                 false
             }
             Some(7) => {
-                狀態 = Some(執行tui命令(子命令::Build, "build")?);
+                狀態 = Some(執行tui命令(&上下文, 子命令::Build, "build")?);
                 已部署 = true;
                 false
             }
@@ -324,6 +331,7 @@ pub fn 進入tui() -> anyhow::Result<()> {
 }
 
 fn 處理下載或安裝(
+    上下文: &啓動上下文,
     操作: 配方操作,
     主題: &ColorfulTheme,
     終端: &Term,
@@ -351,12 +359,18 @@ fn 處理下載或安裝(
             if 配方.is_empty() {
                 return Ok(None);
             }
-            Ok(Some(執行配方操作(操作, 配方, host, proxy)?))
+            Ok(Some(執行配方操作(上下文, 操作, 配方, host, proxy)?))
         }
         配方選擇來源::Rppi => {
             if let Some(配方列表) = 從rppi選擇配方(主題, 終端, host, proxy, rppi索引)?
             {
-                Ok(Some(執行配方操作(操作, 配方列表, host, proxy)?))
+                Ok(Some(執行配方操作(
+                    上下文,
+                    操作,
+                    配方列表,
+                    host,
+                    proxy,
+                )?))
             } else {
                 Ok(None)
             }
@@ -365,6 +379,7 @@ fn 處理下載或安裝(
 }
 
 fn 執行配方操作(
+    上下文: &啓動上下文,
     操作: 配方操作,
     配方: Vec<String>,
     host: Option<&str>,
@@ -397,7 +412,7 @@ fn 執行配方操作(
             配方操作::Download => format!("download {}", p),
             配方操作::Install => format!("install {}", p),
         };
-        訊息.push(執行tui命令(命令, &動作)?);
+        訊息.push(執行tui命令(上下文, 命令, &動作)?);
     }
     Ok(訊息.join("\n"))
 }
@@ -563,8 +578,10 @@ fn rppi配方串(recipe: &Recipe) -> String {
     spec
 }
 
-fn 執行tui命令(命令: 子命令, 描述: &str) -> anyhow::Result<String> {
-    match 執行命令(命令, true) {
+fn 執行tui命令(
+    上下文: &啓動上下文, 命令: 子命令, 描述: &str
+) -> anyhow::Result<String> {
+    match 執行命令(上下文, 命令, true) {
         Ok(()) => Ok(format!("{} {}", style("✓").green(), 描述)),
         Err(err) => Ok(format!("{} {err}", style("✗").red())),
     }

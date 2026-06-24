@@ -2,7 +2,6 @@ use anyhow;
 #[cfg(windows)]
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use crate::rime_levers::*;
 #[cfg(windows)]
@@ -147,16 +146,6 @@ pub fn 用戶目錄() -> Option<String> {
     }
 }
 
-pub fn 有效用戶目錄() -> anyhow::Result<String> {
-    OVERRIDE_USER_DIR
-        .lock()
-        .unwrap()
-        .clone()
-        .or_else(|| 用戶目錄().map(PathBuf::from))
-        .map(|p| p.to_string_lossy().to_string())
-        .ok_or_else(|| anyhow::anyhow!("無法獲取用戶目錄"))
-}
-
 #[cfg(not(windows))]
 pub fn 默認用戶目錄() -> Option<String> {
     用戶目錄()
@@ -199,50 +188,76 @@ pub fn 前端部署() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn 初始化引擎() -> anyhow::Result<()> {
-    // 如果设置了覆盖值，则优先使用覆盖值
-    let 用戶數據目錄 = OVERRIDE_USER_DIR
-        .lock()
-        .unwrap()
-        .clone()
-        .or_else(|| 用戶目錄().map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("."));
-    let mut 參數 = 引擎啓動參數::新建(用戶數據目錄);
-    參數.共享數據場地 = OVERRIDE_SHARED_DIR
-        .lock()
-        .unwrap()
-        .clone()
-        .or_else(|| 共享數據目錄().map(PathBuf::from));
-    let 家目錄 = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
-    let 日誌目錄 = PathBuf::from(家目錄.unwrap())
-        .join(".rime-cli")
-        .join("logs");
-    參數.日誌場地 = Some(日誌目錄);
-    參數.應用名 = Some("rime-cli".to_string());
+#[derive(Debug, Clone)]
+pub struct 啓動上下文 {
+    pub 用戶數據目錄: PathBuf,
+    pub 共享數據目錄: Option<PathBuf>,
+    pub 日誌目錄: Option<PathBuf>,
+    pub 應用名: Option<String>,
+    pub 發行品名: Option<String>,
+    pub 發行代號: Option<String>,
+    pub 發行版本: Option<String>,
+    pub 最小日誌級別: Option<i32>,
+    pub 預構建數據目錄: Option<PathBuf>,
+    pub 緩存目錄: Option<PathBuf>,
+}
+
+#[derive(Debug, Default)]
+pub struct 啓動上下文覆蓋 {
+    pub 用戶數據目錄: Option<PathBuf>,
+    pub 共享數據目錄: Option<PathBuf>,
+    pub 日誌目錄: Option<PathBuf>,
+    pub 應用名: Option<String>,
+    pub 發行品名: Option<String>,
+    pub 發行代號: Option<String>,
+    pub 發行版本: Option<String>,
+    pub 最小日誌級別: Option<i32>,
+    pub 預構建數據目錄: Option<PathBuf>,
+    pub 緩存目錄: Option<PathBuf>,
+}
+
+impl 啓動上下文 {
+    pub fn 解析(覆蓋: 啓動上下文覆蓋) -> anyhow::Result<Self> {
+        let 用戶數據目錄 = 覆蓋
+            .用戶數據目錄
+            .or_else(|| 用戶目錄().map(PathBuf::from))
+            .ok_or_else(|| anyhow::anyhow!("無法獲取用戶目錄"))?;
+        let 共享數據目錄 = 覆蓋
+            .共享數據目錄
+            .or_else(|| 共享數據目錄().map(PathBuf::from));
+        let 日誌目錄 = 覆蓋.日誌目錄.or_else(|| {
+            std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(|家目錄| PathBuf::from(家目錄).join(".rime-cli").join("logs"))
+        });
+        Ok(Self {
+            用戶數據目錄,
+            共享數據目錄,
+            日誌目錄,
+            應用名: 覆蓋.應用名.or_else(|| Some("rime-cli".to_string())),
+            發行品名: 覆蓋.發行品名,
+            發行代號: 覆蓋.發行代號,
+            發行版本: 覆蓋.發行版本,
+            最小日誌級別: 覆蓋.最小日誌級別,
+            預構建數據目錄: 覆蓋.預構建數據目錄,
+            緩存目錄: 覆蓋.緩存目錄,
+        })
+    }
+}
+
+pub fn 初始化引擎(上下文: &啓動上下文) -> anyhow::Result<()> {
+    let mut 參數 = 引擎啓動參數::新建(上下文.用戶數據目錄.clone());
+    參數.共享數據場地 = 上下文.共享數據目錄.clone();
+    參數.日誌場地 = 上下文.日誌目錄.clone();
+    參數.應用名 = 上下文.應用名.clone();
+    參數.品名 = 上下文.發行品名.clone();
+    參數.代號 = 上下文.發行代號.clone();
+    參數.版本 = 上下文.發行版本.clone();
+    參數.最小日誌級別 = 上下文.最小日誌級別;
+    參數.預構建固件場地 = 上下文.預構建數據目錄.clone();
+    參數.緩存場地 = 上下文.緩存目錄.clone();
     crate::rime_levers::設置引擎啓動參數(&參數)?;
     Ok(())
-}
-
-// 全局覆盖变量，当通过 CLI 指定目录时使用
-static OVERRIDE_USER_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
-static OVERRIDE_SHARED_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
-
-pub fn 設置用戶目錄覆蓋(dir: Option<PathBuf>) {
-    *OVERRIDE_USER_DIR.lock().unwrap() = dir.clone();
-    if let Some(d) = dir {
-        log::debug!("設置用戶目錄覆蓋: {}", d.to_string_lossy());
-    } else {
-        log::debug!("清除了用戶目錄覆蓋");
-    }
-}
-
-pub fn 設置共享數據目錄覆蓋(dir: Option<PathBuf>) {
-    *OVERRIDE_SHARED_DIR.lock().unwrap() = dir.clone();
-    if let Some(d) = dir {
-        log::debug!("設置共享數據目錄覆蓋: {}", d.to_string_lossy());
-    } else {
-        log::debug!("清除了共享數據目錄覆蓋");
-    }
 }
 
 #[cfg(test)]

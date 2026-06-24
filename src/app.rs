@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use structopt::StructOpt;
 
 use crate::client::*;
@@ -72,11 +70,13 @@ pub enum 子命令 {
     Tui,
 }
 
-pub fn 執行命令(命令行參數: 子命令, 圖形界面: bool) -> anyhow::Result<()> {
+pub fn 執行命令(
+    上下文: &啓動上下文, 命令行參數: 子命令, 圖形界面: bool
+) -> anyhow::Result<()> {
     match 命令行參數 {
         子命令::Add { schemata } => {
             if !圖形界面 {
-                初始化引擎()?;
+                初始化引擎(上下文)?;
                 檢查默認設置自定義文件();
             }
 
@@ -86,7 +86,7 @@ pub fn 執行命令(命令行參數: 子命令, 圖形界面: bool) -> anyhow::R
         }
         子命令::Remove { schemata } => {
             if !圖形界面 {
-                初始化引擎()?;
+                初始化引擎(上下文)?;
                 檢查默認設置自定義文件();
             }
             從方案列表中刪除(&schemata)?;
@@ -102,7 +102,7 @@ pub fn 執行命令(命令行參數: 子命令, 圖形界面: bool) -> anyhow::R
             #[cfg(not(windows))]
             {
                 if !圖形界面 {
-                    初始化引擎()?;
+                    初始化引擎(上下文)?;
                 }
                 製備輸入法固件()?;
             }
@@ -124,15 +124,14 @@ pub fn 執行命令(命令行參數: 子命令, 圖形界面: bool) -> anyhow::R
                 .map(|rx| 配方名片::from(rx.as_str()))
                 .collect::<Vec<_>>();
             下載配方包(&衆配方, 下載參數)?;
-            let 用戶數據目錄 = 有效用戶目錄().unwrap_or(默認用戶目錄().unwrap());
 
             for 配方 in &衆配方 {
-                安裝配方(配方, &PathBuf::from(&用戶數據目錄))?;
+                安裝配方(配方, &上下文.用戶數據目錄)?;
             }
         }
         子命令::Patch { config, key, value } => {
             if !圖形界面 {
-                初始化引擎()?;
+                初始化引擎(上下文)?;
                 檢查默認設置自定義文件();
             }
 
@@ -141,7 +140,7 @@ pub fn 執行命令(命令行參數: 子命令, 圖形界面: bool) -> anyhow::R
         }
         子命令::Select { schema } => {
             if !圖形界面 {
-                初始化引擎()?;
+                初始化引擎(上下文)?;
                 檢查默認設置自定義文件();
             }
 
@@ -203,7 +202,7 @@ pub fn 執行命令(命令行參數: 子命令, 圖形界面: bool) -> anyhow::R
                 }
             }
             let 目標版本 = tag.unwrap_or("".to_string());
-            crate::get_rime::更新引擎庫(&目標版本, &下載參數)?;
+            crate::get_rime::更新引擎庫(上下文, &目標版本, &下載參數)?;
         }
         #[cfg(feature = "tui")]
         子命令::Tui => {}
