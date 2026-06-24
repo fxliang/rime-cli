@@ -35,16 +35,14 @@ jobs:
           cargo make pre-build
 
       - name: Build
-        run: |
-          cargo build --release --features=tui
+        run: cargo make build-ci
 
       - name: Test
-        run: cargo test --release
+        run: cargo make test-ci
 
       - name: Prepare package
         if: runner.os == 'Windows' || runner.os == 'macOS'
-        run: |
-          cargo make package-release
+        run: cargo make package-release
 
       - name: Archive production artifacts
         if: runner.os == 'Windows' || runner.os == 'macOS'
