@@ -1,3 +1,4 @@
+use crate::client::啓動上下文;
 #[cfg(windows)]
 use crate::client::*;
 use crate::download::下載參數;
@@ -138,6 +139,7 @@ fn 獲取最終下載鏈接(
 
 // 已實現 小狼毫 更新rime.dll
 fn 下載並更新引擎庫(
+    上下文: &啓動上下文,
     附件: &附件信息,
     域名: String,
     代理: Option<&str>,
@@ -191,7 +193,7 @@ fn 下載並更新引擎庫(
         match 驗證文件哈希(&本地文件路徑, &附件.檢驗碼) {
             Ok(true) => {
                 println!(" '{}' 已存在且校驗碼匹配，跳過下載。", 文件名);
-                return 解壓並更新引擎(&本地文件路徑.to_string_lossy().to_string());
+                return 解壓並更新引擎(上下文, &本地文件路徑.to_string_lossy().to_string());
             }
             Ok(false) => {
                 println!(" '{}' 已存在但校驗碼不符，重新下載。", 文件名);
@@ -251,14 +253,14 @@ fn 下載並更新引擎庫(
     println!();
     // 下載完成後驗證sha256
     if 驗證文件哈希(&本地文件路徑, &附件.檢驗碼)? {
-        解壓並更新引擎(&本地文件路徑.to_string_lossy().to_string())
+        解壓並更新引擎(上下文, &本地文件路徑.to_string_lossy().to_string())
     } else {
         anyhow::bail!(format!("'{}' 下載後校驗碼不匹配，請重試。", 文件名))
     }
 }
 
 #[cfg(windows)]
-fn 解壓並更新引擎(文件名: &String) -> anyhow::Result<()> {
+fn 解壓並更新引擎(上下文: &啓動上下文, 文件名: &String) -> anyhow::Result<()> {
     match 獲取小狼毫程序目錄() {
         Some(小狼毫根目錄) => {
             let 小狼毫算法服務 = Path::new(&小狼毫根目錄).join("WeaselServer.exe");
@@ -353,7 +355,7 @@ fn 解壓並更新引擎(文件名: &String) -> anyhow::Result<()> {
                 }
                 if 當前在小狼毫目錄中 {
                     //let _  = 初始化庫();
-                    let _ = 初始化引擎();
+                    let _ = 初始化引擎(上下文);
                 }
                 Ok(())
             } else {
@@ -367,12 +369,14 @@ fn 解壓並更新引擎(文件名: &String) -> anyhow::Result<()> {
 }
 
 #[cfg(not(windows))]
-fn 解壓並更新引擎(_文件名: &String) -> anyhow::Result<()> {
+fn 解壓並更新引擎(_上下文: &啓動上下文, _文件名: &String) -> anyhow::Result<()> {
     // 解壓更新鼠須管的rime引擎庫
     todo!("還不會做呢！");
 }
 
-pub fn 更新引擎庫(版本: &String, 參數: &下載參數) -> anyhow::Result<()> {
+pub fn 更新引擎庫(
+    上下文: &啓動上下文, 版本: &String, 參數: &下載參數
+) -> anyhow::Result<()> {
     let 代理 = 參數.代理地址();
     // token 允許從參數傳入，也允許回退到環境變量；
     let token_owned = match 參數.令牌() {
@@ -386,7 +390,7 @@ pub fn 更新引擎庫(版本: &String, 參數: &下載參數) -> anyhow::Result
     let 附件 = 獲取最終下載鏈接(Some(版本), 代理, 令牌);
     let 倉庫 = 參數.倉庫域名().unwrap_or_else(|| "github.com").to_string();
     if let Some(附件) = 附件 {
-        下載並更新引擎庫(&附件, 倉庫, 代理)
+        下載並更新引擎庫(上下文, &附件, 倉庫, 代理)
     } else {
         anyhow::bail!("未找到合適的下載鏈接.");
     }
