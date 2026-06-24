@@ -74,6 +74,16 @@ description = "解壓 Windows 平台的 7z 歸檔文件至 librime 目錄"
 command = "7z"
 args = ["x", "-y", "-o${CARGO_MAKE_WORKING_DIRECTORY}/librime", "${CARGO_MAKE_WORKING_DIRECTORY}/${rime_artifact}"]
 
+[tasks.build-ci]
+description = "CI 用構建任務，帶 tui feature"
+command = "cargo"
+args = ["build", "--release", "--features", "tui"]
+
+[tasks.test-ci]
+description = "CI 用測試任務"
+command = "cargo"
+args = ["test", "--release"]
+
 [tasks.package-release]
 description = "分流任務：將編譯產物與動態庫打包爲相應平台的壓縮包"
 mac_alias = "package-release-mac"
