@@ -32,15 +32,23 @@ impl 引擎啓動參數 {
 }
 
 pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<()> {
-    log::debug!("設置引擎啓動參數. 用戶數據場地: {}", 參數.用戶數據場地.display());
+    log::debug!(
+        "設置引擎啓動參數. 用戶數據場地: {}",
+        參數.用戶數據場地.display()
+    );
     std::fs::create_dir_all(&參數.用戶數據場地)?;
-    
+
     // 準備所有需要的 CString，保存到靜態變量中
     let mut c_strings = Vec::new();
-    
-    let 用戶數據場地〇 = CString::new(參數.用戶數據場地.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
+
+    let 用戶數據場地〇 = CString::new(
+        參數
+            .用戶數據場地
+            .to_str()
+            .ok_or(anyhow!("路徑編碼轉換錯誤"))?,
+    )?;
     c_strings.push(用戶數據場地〇);
-    
+
     let 共享數據場地_idx = if let Some(ref 場地) = 參數.共享數據場地 {
         std::fs::create_dir_all(場地)?;
         let cstr = CString::new(場地.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
@@ -49,7 +57,7 @@ pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<(
     } else {
         None
     };
-    
+
     let 品名_idx = if let Some(ref 品名) = 參數.品名 {
         let cstr = CString::new(品名.as_str())?;
         c_strings.push(cstr);
@@ -59,7 +67,7 @@ pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<(
         c_strings.push(cstr);
         Some(c_strings.len() - 1)
     };
-    
+
     let 代號_idx = if let Some(ref 代號) = 參數.代號 {
         let cstr = CString::new(代號.as_str())?;
         c_strings.push(cstr);
@@ -67,7 +75,7 @@ pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<(
     } else {
         品名_idx
     };
-    
+
     let 版本_idx = if let Some(ref 版本) = 參數.版本 {
         let cstr = CString::new(版本.as_str())?;
         c_strings.push(cstr);
@@ -77,7 +85,7 @@ pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<(
         c_strings.push(cstr);
         Some(c_strings.len() - 1)
     };
-    
+
     let 應用名_idx = if let Some(ref 應用名) = 參數.應用名 {
         let cstr = CString::new(應用名.as_str())?;
         c_strings.push(cstr);
@@ -85,7 +93,7 @@ pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<(
     } else {
         None
     };
-    
+
     let 日誌場地_idx = if let Some(ref p) = 參數.日誌場地 {
         std::fs::create_dir_all(p)?;
         let cstr = CString::new(p.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
@@ -94,7 +102,7 @@ pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<(
     } else {
         None
     };
-    
+
     let 預構建固件場地_idx = if let Some(ref p) = 參數.預構建固件場地 {
         std::fs::create_dir_all(p)?;
         let cstr = CString::new(p.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
@@ -103,7 +111,7 @@ pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<(
     } else {
         None
     };
-    
+
     let 緩存場地_idx = if let Some(ref p) = 參數.緩存場地 {
         std::fs::create_dir_all(p)?;
         let cstr = CString::new(p.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
@@ -118,12 +126,14 @@ pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<(
     啓動參數.shared_data_dir = if let Some(idx) = 共享數據場地_idx {
         c_strings[idx].as_ptr()
     } else {
-        c_strings[0].as_ptr()  // 用戶數據場地
+        c_strings[0].as_ptr() // 用戶數據場地
     };
-    啓動參數.user_data_dir = c_strings[0].as_ptr();  // 用戶數據場地始終是第一個
+    啓動參數.user_data_dir = c_strings[0].as_ptr(); // 用戶數據場地始終是第一個
     啓動參數.distribution_name = 品名_idx.map_or(std::ptr::null(), |idx| c_strings[idx].as_ptr());
-    啓動參數.distribution_code_name = 代號_idx.map_or(std::ptr::null(), |idx| c_strings[idx].as_ptr());
-    啓動參數.distribution_version = 版本_idx.map_or(std::ptr::null(), |idx| c_strings[idx].as_ptr());
+    啓動參數.distribution_code_name =
+        代號_idx.map_or(std::ptr::null(), |idx| c_strings[idx].as_ptr());
+    啓動參數.distribution_version =
+        版本_idx.map_or(std::ptr::null(), |idx| c_strings[idx].as_ptr());
     if let Some(idx) = 應用名_idx {
         啓動參數.app_name = c_strings[idx].as_ptr();
     }
@@ -139,13 +149,13 @@ pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<(
     if let Some(idx) = 緩存場地_idx {
         啓動參數.staging_dir = c_strings[idx].as_ptr();
     }
-    
+
     // 先調用 setup
     rime_api_call!(setup, &mut 啓動參數);
-    
+
     // 將 CString 保存到靜態變量中，確保它們在程序運行期間一直有效
     *RIME_SETUP_STRINGS.lock().unwrap() = Some(c_strings);
-    
+
     Ok(())
 }
 
@@ -265,11 +275,7 @@ pub fn 從方案列表中刪除(衆輸入方案: &[String]) -> anyhow::Result<()
     rime_api_call!(deployer_initialize, std::ptr::null_mut());
     let mut 自訂配置: RimeConfig = rime_struct_new!();
     let 默認配置的自訂〇 = CString::new("default.custom")?;
-    rime_api_call!(
-        user_config_open,
-        默認配置的自訂〇.as_ptr(),
-        &mut 自訂配置
-    );
+    rime_api_call!(user_config_open, 默認配置的自訂〇.as_ptr(), &mut 自訂配置);
     // 取得已有方案列表
     let 方案列表〇 = CString::new("patch/schema_list")?;
 
@@ -283,7 +289,7 @@ pub fn 從方案列表中刪除(衆輸入方案: &[String]) -> anyhow::Result<()
         let 列表項〇 = CString::new(format!("patch/schema_list/@{}/schema", i))?;
         let 方案 = rime_api_call!(config_get_cstring, &mut 自訂配置, 列表項〇.as_ptr());
         if !方案.is_null() {
-            既有方案.push(unsafe { CStr::from_ptr(方案) }.to_str()? .to_owned());
+            既有方案.push(unsafe { CStr::from_ptr(方案) }.to_str()?.to_owned());
         }
     }
 
@@ -292,7 +298,9 @@ pub fn 從方案列表中刪除(衆輸入方案: &[String]) -> anyhow::Result<()
         .into_iter()
         .map(|s| s.split_whitespace().next().unwrap_or("").to_string())
         .collect::<Vec<_>>();
-    let 保留方案 = 既有方案.into_iter().filter(|方案| !衆輸入方案.contains(方案));
+    let 保留方案 = 既有方案
+        .into_iter()
+        .filter(|方案| !衆輸入方案.contains(方案));
 
     rime_api_call!(config_create_list, &mut 自訂配置, 方案列表〇.as_ptr());
     for (i, 方案) in 保留方案.enumerate() {
@@ -332,12 +340,12 @@ pub fn 選擇輸入方案(方案: &str) -> anyhow::Result<()> {
 }
 
 #[cfg(windows)]
-unsafe fn 系統編碼轉換為路徑(輸入字串指標: *const i8) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+unsafe fn 系統編碼轉換為路徑(
+    輸入字串指標: *const i8,
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     use std::ffi::CStr;
     use std::os::windows::ffi::OsStringExt;
-    use windows::Win32::Globalization::{
-        MultiByteToWideChar, CP_ACP, MB_PRECOMPOSED,
-    };
+    use windows::Win32::Globalization::{MultiByteToWideChar, CP_ACP, MB_PRECOMPOSED};
 
     let c位元組切片 = CStr::from_ptr(輸入字串指標).to_bytes();
     let 位元組長度 = c位元組切片.len();
@@ -368,7 +376,7 @@ unsafe fn 系統編碼轉換為路徑(輸入字串指標: *const i8) -> Result<s
         MultiByteToWideChar(
             CP_ACP,
             MB_PRECOMPOSED,
-            c位元組切片,           // ← 輸入位元組 slice
+            c位元組切片,             // ← 輸入位元組 slice
             Some(&mut 寬字元緩衝區), // ← 提供可變 slice 作為輸出
         )
     };
@@ -421,9 +429,9 @@ pub fn 方案列表(已選: bool) -> anyhow::Result<Vec<String>> {
     let mut 可用方案列表 = vec![];
     let mut 已選方案列表 = vec![];
     let 槓桿模塊 = rime_api_call!(
-            find_module,
-            CStr::from_bytes_with_nul(b"levers\0").unwrap().as_ptr()
-        );
+        find_module,
+        CStr::from_bytes_with_nul(b"levers\0").unwrap().as_ptr()
+    );
     let 切換器設置 = rime_module_call!(
         槓桿模塊 => RimeLeversApi,
         switcher_settings_init
@@ -443,7 +451,9 @@ pub fn 方案列表(已選: bool) -> anyhow::Result<Vec<String>> {
     for i in 0..已選列表.size {
         let 方案識別碼指針 = unsafe { *已選列表.list.add(i as usize) }.schema_id;
         if !方案識別碼指針.is_null() {
-            已選方案列表.push(unsafe { CStr::from_ptr(方案識別碼指針).to_str().unwrap().to_owned() });
+            已選方案列表.push(unsafe {
+                CStr::from_ptr(方案識別碼指針).to_str().unwrap().to_owned()
+            });
         }
     }
     let mut 可用列表 = rime_struct_new!();
@@ -452,24 +462,29 @@ pub fn 方案列表(已選: bool) -> anyhow::Result<Vec<String>> {
         get_available_schema_list,
         切換器設置,
         &mut 可用列表
-    ); 
+    );
     for i in 0..可用列表.size {
         let 方案識別碼指針 = unsafe { *可用列表.list.add(i as usize) }.schema_id;
-        let 方案資訊指針 = unsafe { *可用列表.list.add(i as usize) }.reserved as *mut rime::RimeSchemaInfo;
+        let 方案資訊指針 =
+            unsafe { *可用列表.list.add(i as usize) }.reserved as *mut rime::RimeSchemaInfo;
         let 方案名稱指針 = rime_module_call!(
-                槓桿模塊 => RimeLeversApi,
-                get_schema_name,
-                方案資訊指針
-            );
-        let mut 識別碼 = unsafe { CStr::from_ptr(方案識別碼指針).to_str().unwrap().to_owned() };
+            槓桿模塊 => RimeLeversApi,
+            get_schema_name,
+            方案資訊指針
+        );
+        let mut 識別碼 =
+            unsafe { CStr::from_ptr(方案識別碼指針).to_str().unwrap().to_owned() };
         if !方案識別碼指針.is_null() {
-            識別碼.push_str(&format!(" [{}]", unsafe { CStr::from_ptr(方案名稱指針).to_str().unwrap() }));
+            識別碼.push_str(&format!(" [{}]", unsafe {
+                CStr::from_ptr(方案名稱指針).to_str().unwrap()
+            }));
             可用方案列表.push(識別碼);
         }
     }
     rime_api_call!(finalize);
     use std::collections::HashMap;
-    let 識別碼到完整: HashMap<&str, String> = 可用方案列表.iter()
+    let 識別碼到完整: HashMap<&str, String> = 可用方案列表
+        .iter()
         .filter_map(|item| {
             let 識別碼 = item.split_whitespace().next()?;
             Some((識別碼, item.clone()))
@@ -479,7 +494,8 @@ pub fn 方案列表(已選: bool) -> anyhow::Result<Vec<String>> {
         .into_iter()
         .map(|識別碼| 識別碼到完整.get(識別碼.as_str()).unwrap_or(&識別碼).clone())
         .collect::<Vec<String>>();
-    let 已選識別碼: std::collections::HashSet<&str> = 已選方案列表.iter()
+    let 已選識別碼: std::collections::HashSet<&str> = 已選方案列表
+        .iter()
         .filter_map(|item| item.split_whitespace().next())
         .collect();
     let 可用方案列表 = 可用方案列表
@@ -604,7 +620,10 @@ mod tests {
         }
         let 參數 = 引擎啓動參數::新建(專用測試場地.clone());
         println!("user data dir: {}", 參數.用戶數據場地.display());
-        println!("shared data dir: {:?}", 參數.共享數據場地.as_ref().map(|p| p.display()));
+        println!(
+            "shared data dir: {:?}",
+            參數.共享數據場地.as_ref().map(|p| p.display())
+        );
         assert_ok!(設置引擎啓動參數(&參數));
         assert_ok!(write(
             專用測試場地.join("default.yaml"),
@@ -684,11 +703,7 @@ schema:
         }
         let 參數 = 引擎啓動參數::新建(專用測試場地.clone());
         assert_ok!(設置引擎啓動參數(&參數));
-        let 初始輸入方案 = vec![
-            "protoss".to_owned(),
-            "terran".to_owned(),
-            "zerg".to_owned(),
-        ];
+        let 初始輸入方案 = vec!["protoss".to_owned(), "terran".to_owned(), "zerg".to_owned()];
         assert_ok!(加入輸入方案列表(&初始輸入方案));
         let 自訂配置檔案 = 專用測試場地.join("default.custom.yaml");
         assert!(自訂配置檔案.exists());
@@ -706,13 +721,10 @@ schema:
         rime_api_call!(deployer_initialize, std::ptr::null_mut());
         let mut 自訂配置: RimeConfig = rime_struct_new!();
         let 默認配置的自訂〇 = CString::new("default.custom").unwrap();
-        rime_api_call!(
-            user_config_open,
-            默認配置的自訂〇.as_ptr(),
-            &mut 自訂配置
-        );
+        rime_api_call!(user_config_open, 默認配置的自訂〇.as_ptr(), &mut 自訂配置);
         let 方案列表〇 = CString::new("patch/schema_list").unwrap();
-        let 既有方案數 = rime_api_call!(config_list_size, &mut 自訂配置, 方案列表〇.as_ptr()) as u64;
+        let 既有方案數 =
+            rime_api_call!(config_list_size, &mut 自訂配置, 方案列表〇.as_ptr()) as u64;
         assert_eq!(既有方案數, 1);
         rime_api_call!(config_close, &mut 自訂配置);
         rime_api_call!(finalize);

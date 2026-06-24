@@ -1,0 +1,604 @@
+use crate::app::{執行命令, 子命令};
+use crate::client::初始化引擎;
+use crate::download::{下載參數, 同步rppi索引};
+use crate::rime_levers::{方案列表, 檢查默認設置自定義文件};
+use dialoguer::console::{style, Term};
+use dialoguer::{theme::ColorfulTheme, Input, Select};
+use rppi_parser::{load_catalog, CatalogNode, Recipe};
+use std::{collections::HashSet, fs, path::PathBuf};
+
+#[derive(Copy, Clone)]
+enum 配方操作 {
+    Download,
+    Install,
+}
+
+#[derive(Copy, Clone)]
+enum 配方選擇來源 {
+    手動,
+    Rppi,
+}
+
+#[derive(Default, Clone)]
+struct Tui配置 {
+    proxy: Option<String>,
+    host: Option<String>,
+}
+
+fn 配置文件路徑() -> Option<PathBuf> {
+    let 家目錄 = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    家目錄.map(|家| {
+        let mut 路徑 = PathBuf::from(家);
+        路徑.push(".rime-cli");
+        路徑.push("config");
+        路徑
+    })
+}
+
+fn 讀取tui配置() -> anyhow::Result<Tui配置> {
+    let mut 配置 = Tui配置::default();
+    if let Some(路徑) = 配置文件路徑() {
+        if 路徑.exists() {
+            if let Ok(內容) = fs::read_to_string(&路徑) {
+                for 行 in 內容.lines() {
+                    let mut 分隔 = 行.splitn(2, '=');
+                    if let (Some(鍵), Some(值)) = (分隔.next(), 分隔.next()) {
+                        let 內容 = 值.trim();
+                        if 內容.is_empty() {
+                            continue;
+                        }
+                        match 鍵.trim() {
+                            "proxy" => 配置.proxy = Some(內容.to_string()),
+                            "host" => 配置.host = Some(內容.to_string()),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(配置)
+}
+
+fn 保存tui配置(配置: &Tui配置) -> anyhow::Result<()> {
+    if let Some(路徑) = 配置文件路徑() {
+        if let Some(父目錄) = 路徑.parent() {
+            fs::create_dir_all(父目錄)?;
+        }
+        let mut 內容 = String::new();
+        if let Some(host) = &配置.host {
+            內容.push_str(&format!("host={}\n", host));
+        }
+        if let Some(proxy) = &配置.proxy {
+            內容.push_str(&format!("proxy={}\n", proxy));
+        }
+        fs::write(路徑, 內容)?;
+    }
+    Ok(())
+}
+
+pub fn 進入tui() -> anyhow::Result<()> {
+    let 主題 = ColorfulTheme::default();
+    let 終端 = Term::stdout();
+    let mut 配置 = 讀取tui配置()?;
+    let mut proxy = 配置.proxy.clone();
+    let mut host = 配置.host.clone();
+    let mut rppi索引: Option<PathBuf> = None;
+    let mut 狀態: Option<String> = None;
+    let mut 已部署 = false;
+    初始化引擎()?;
+
+    // 舊 librime 在 default.custom.yaml 不存在時會導致獲取列表失敗。
+    檢查默認設置自定義文件();
+
+    'tui: loop {
+        if let Some(msg) = 狀態.take() {
+            println!("{msg}");
+        }
+        let 選項 = vec![
+            "下載配方".to_string(),
+            "安裝配方".to_string(),
+            "更新引擎庫".to_string(),
+            "選擇輸入方案".to_string(),
+            "加入輸入方案列表".to_string(),
+            "從方案列表中刪除".to_string(),
+            "配置補丁".to_string(),
+            "構建輸入法固件".to_string(),
+            format!("設置代理 ({})", proxy.as_deref().unwrap_or("未設置")),
+            format!("設置域名 ({})", host.as_deref().unwrap_or("未設置")),
+            "退出".to_string(),
+        ];
+        let sel = Select::with_theme(&主題)
+            .with_prompt("選擇操作 (使用方向鍵(或者jk)移动選擇，回車或空格確認, q或Esc退出)")
+            .items(&選項)
+            .default(0)
+            .interact_on_opt(&終端)?;
+        let 應退出 = match sel {
+            Some(0) => {
+                if let Some(msg) = 處理下載或安裝(
+                    配方操作::Download,
+                    &主題,
+                    &終端,
+                    host.as_deref(),
+                    proxy.as_deref(),
+                    &mut rppi索引,
+                )? {
+                    狀態 = Some(msg);
+                }
+                false
+            }
+            Some(1) => {
+                if let Some(msg) = 處理下載或安裝(
+                    配方操作::Install,
+                    &主題,
+                    &終端,
+                    host.as_deref(),
+                    proxy.as_deref(),
+                    &mut rppi索引,
+                )? {
+                    狀態 = Some(msg);
+                }
+                false
+            }
+            Some(2) => {
+                let tag = match 讀取可取消("版本標籤 (留空使用最新, 輸入q或c回車退出)")?
+                {
+                    Some(t) => t,
+                    None => continue 'tui,
+                };
+                狀態 = Some(執行tui命令(
+                    子命令::Get {
+                        tag: 非空或無(tag),
+                        下載參數: 下載參數::new(host.clone(), proxy.clone(), None),
+                    },
+                    "get",
+                )?);
+                false
+            }
+            Some(3) => {
+                if !已部署 {
+                    _ = Some(執行tui命令(子命令::Build, "build")?);
+                    已部署 = true;
+                }
+                let 列表 = 方案列表(true)?;
+                if 列表.is_empty() {
+                    println!("已選方案列表爲空");
+                    continue 'tui;
+                }
+
+                let 選項 = 列表.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+                let sel = Select::with_theme(&主題)
+                    .with_prompt("要選擇的輸入方案 (輸入q或Esc退出)")
+                    .items(&選項)
+                    .default(0)
+                    .interact_on_opt(&終端)?;
+                let 方案 = match sel {
+                    Some(idx) => 列表[idx]
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_string(),
+                    None => continue 'tui,
+                };
+                if !方案.is_empty() {
+                    狀態 = Some(執行tui命令(
+                        子命令::Select {
+                            schema: 方案.clone(),
+                        },
+                        &format!("select {}", 方案),
+                    )?);
+                }
+                false
+            }
+            Some(4) => {
+                if !已部署 {
+                    _ = Some(執行tui命令(子命令::Build, "build")?);
+                    已部署 = true;
+                }
+                let 列表 = 方案列表(false)?;
+                if 列表.is_empty() {
+                    println!("可添加方案列表爲空");
+                    continue 'tui;
+                }
+
+                let 選項 = 列表.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+                let sel = Select::with_theme(&主題)
+                    .with_prompt("要加入的輸入方案 (輸入q或Esc退出)")
+                    .items(&選項)
+                    .default(0)
+                    .interact_on_opt(&終端)?;
+                let 方案 = match sel {
+                    Some(idx) => 列表[idx]
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_string(),
+                    None => continue 'tui,
+                };
+                if !方案.is_empty() {
+                    狀態 = Some(執行tui命令(
+                        子命令::Add {
+                            schemata: vec![方案.clone()],
+                        },
+                        &format!("add {}", 方案),
+                    )?);
+                }
+                false
+            }
+            Some(5) => {
+                if !已部署 {
+                    _ = Some(執行tui命令(子命令::Build, "build")?);
+                    已部署 = true;
+                }
+                let 列表 = 方案列表(true)?;
+                if 列表.is_empty() {
+                    println!("已選方案列表爲空");
+                    continue 'tui;
+                }
+
+                let 選項 = 列表.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+                let sel = Select::with_theme(&主題)
+                    .with_prompt("要刪除的輸入方案 (輸入q或Esc退出)")
+                    .items(&選項)
+                    .default(0)
+                    .interact_on_opt(&終端)?;
+
+                let 方案 = match sel {
+                    Some(idx) => 列表[idx]
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_string(),
+                    None => continue 'tui,
+                };
+                if !方案.is_empty() {
+                    狀態 = Some(執行tui命令(
+                        子命令::Remove {
+                            schemata: vec![方案.clone()],
+                        },
+                        &format!("remove {}", 方案),
+                    )?);
+                }
+                false
+            }
+            Some(6) => {
+                let config = match 讀取可取消("目標配置 (如 default)")? {
+                    Some(c) => c,
+                    None => continue 'tui,
+                };
+                let key = match 讀取可取消("紐 (如 patch/menu/page_size)")? {
+                    Some(k) => k,
+                    None => continue 'tui,
+                };
+                let value = match 讀取可取消("值 (YAML 格式)")? {
+                    Some(v) => v,
+                    None => continue 'tui,
+                };
+                if !(config.trim().is_empty() || key.trim().is_empty() || value.trim().is_empty()) {
+                    狀態 = Some(執行tui命令(
+                        子命令::Patch {
+                            config: config.clone(),
+                            key: key.clone(),
+                            value,
+                        },
+                        &format!("patch {} {}", config, key),
+                    )?);
+                }
+                false
+            }
+            Some(7) => {
+                狀態 = Some(執行tui命令(子命令::Build, "build")?);
+                已部署 = true;
+                false
+            }
+            Some(8) => {
+                let 輸入: String = Input::with_theme(&主題)
+                    .with_prompt("Proxy (留空清除)")
+                    .allow_empty(true)
+                    .interact_text()?;
+                proxy = 非空或無(輸入);
+                配置.proxy = proxy.clone();
+                保存tui配置(&配置)?;
+                false
+            }
+            Some(9) => {
+                let 輸入: String = Input::with_theme(&主題)
+                    .with_prompt("Host (留空清除)")
+                    .allow_empty(true)
+                    .interact_text()?;
+                host = 非空或無(輸入);
+                配置.host = host.clone();
+                保存tui配置(&配置)?;
+                false
+            }
+            None => true,
+            _ => true,
+        };
+        if 應退出 {
+            break;
+        }
+    }
+
+    保存tui配置(&配置)?;
+    Ok(())
+}
+
+fn 處理下載或安裝(
+    操作: 配方操作,
+    主題: &ColorfulTheme,
+    終端: &Term,
+    host: Option<&str>,
+    proxy: Option<&str>,
+    rppi索引: &mut Option<PathBuf>,
+) -> anyhow::Result<Option<String>> {
+    let Some(來源) = 選擇配方來源(主題, 終端)? else {
+        return Ok(None);
+    };
+
+    match 來源 {
+        配方選擇來源::手動 => {
+            let 提示 = match 操作 {
+                配方操作::Download => "要下載的配方 (空格分隔，輸入q或c回車退出)",
+                配方操作::Install => "要安裝的配方 (空格分隔，輸入q或c回車退出)",
+            };
+            let Some(輸入) = 讀取可取消(提示)? else {
+                return Ok(None);
+            };
+            let 配方 = 輸入
+                .split_whitespace()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>();
+            if 配方.is_empty() {
+                return Ok(None);
+            }
+            Ok(Some(執行配方操作(操作, 配方, host, proxy)?))
+        }
+        配方選擇來源::Rppi => {
+            if let Some(配方列表) = 從rppi選擇配方(主題, 終端, host, proxy, rppi索引)?
+            {
+                Ok(Some(執行配方操作(操作, 配方列表, host, proxy)?))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+}
+
+fn 執行配方操作(
+    操作: 配方操作,
+    配方: Vec<String>,
+    host: Option<&str>,
+    proxy: Option<&str>,
+) -> anyhow::Result<String> {
+    let mut 訊息 = Vec::new();
+    for p in 配方 {
+        let prompt = match 操作 {
+            配方操作::Download => format!("下載配方 {}", p),
+            配方操作::Install => format!("安裝配方 {}", p),
+        };
+        println!("{}", style(prompt).blue());
+
+        let 下載參數 = 下載參數::new(
+            host.map(|h| h.to_string()),
+            proxy.map(|p| p.to_string()),
+            None,
+        );
+        let 命令 = match 操作 {
+            配方操作::Download => 子命令::Download {
+                recipes: vec![p.clone()],
+                下載參數,
+            },
+            配方操作::Install => 子命令::Install {
+                recipes: vec![p.clone()],
+                下載參數,
+            },
+        };
+        let 動作 = match 操作 {
+            配方操作::Download => format!("download {}", p),
+            配方操作::Install => format!("install {}", p),
+        };
+        訊息.push(執行tui命令(命令, &動作)?);
+    }
+    Ok(訊息.join("\n"))
+}
+
+fn 選擇配方來源(
+    主題: &ColorfulTheme,
+    終端: &Term,
+) -> anyhow::Result<Option<配方選擇來源>> {
+    let 選項 = vec![
+        "直接輸入配方".to_string(),
+        "瀏覽 rime/rppi".to_string(),
+        "返回".to_string(),
+    ];
+    let sel = Select::with_theme(主題)
+        .with_prompt("選擇配方來源 (使用方向鍵(或者jk)移动選擇，回車或空格確認, q或Esc退出)")
+        .items(&選項)
+        .default(0)
+        .interact_on_opt(終端)?;
+    match sel {
+        Some(0) => Ok(Some(配方選擇來源::手動)),
+        Some(1) => Ok(Some(配方選擇來源::Rppi)),
+        None => Ok(None),
+        _ => Ok(None),
+    }
+}
+
+fn 從rppi選擇配方(
+    主題: &ColorfulTheme,
+    終端: &Term,
+    host: Option<&str>,
+    proxy: Option<&str>,
+    rppi索引: &mut Option<PathBuf>,
+) -> anyhow::Result<Option<Vec<String>>> {
+    let 參數 = 下載參數::new(
+        host.map(|h| h.to_string()),
+        proxy.map(|p| p.to_string()),
+        None,
+    );
+    let rppi目錄 = if let Some(已拉取) = rppi索引 {
+        已拉取.clone()
+    } else {
+        let 拉取路徑 = 同步rppi索引(&參數)?;
+        *rppi索引 = Some(拉取路徑.clone());
+        拉取路徑
+    };
+    let catalog = load_catalog(&rppi目錄)?;
+    Ok(選擇rppi配方(&catalog, 主題, 終端)?.map(|r| rppi配方列表(&r)))
+}
+
+enum Rppi菜單條目 {
+    分類 { key: String },
+    配方(Recipe),
+    返回,
+    取消,
+}
+
+fn 選擇rppi配方(
+    catalog: &CatalogNode,
+    主題: &ColorfulTheme,
+    終端: &Term,
+) -> anyhow::Result<Option<Recipe>> {
+    let mut 當前 = catalog;
+    let mut 堆疊: Vec<&CatalogNode> = Vec::new();
+
+    loop {
+        let mut 條目列表: Vec<Rppi菜單條目> = Vec::new();
+        let mut 顯示文本: Vec<String> = Vec::new();
+
+        if let Some(parent) = &當前.parent {
+            for cat in &parent.categories {
+                let label = format!("{} ({})", cat.name, cat.key);
+                條目列表.push(Rppi菜單條目::分類 {
+                    key: cat.key.clone(),
+                });
+                顯示文本.push(label);
+            }
+        }
+
+        if let Some(child) = &當前.child {
+            for recipe in &child.recipes {
+                let label = format!("{} ({})", recipe.name, recipe.repo);
+                條目列表.push(Rppi菜單條目::配方(recipe.clone()));
+                顯示文本.push(label);
+            }
+        }
+
+        if !堆疊.is_empty() {
+            條目列表.push(Rppi菜單條目::返回);
+            顯示文本.push("返回上級".to_string());
+        }
+
+        條目列表.push(Rppi菜單條目::取消);
+        顯示文本.push("取消".to_string());
+
+        if 顯示文本.is_empty() {
+            return Ok(None);
+        }
+
+        let sel = Select::with_theme(主題)
+            .items(&顯示文本)
+            .default(0)
+            .interact_on_opt(終端)?;
+
+        match sel {
+            None => {
+                if let Some(prev) = 堆疊.pop() {
+                    當前 = prev;
+                } else {
+                    return Ok(None);
+                }
+            }
+            Some(idx) => match 條目列表.get(idx).unwrap_or(&Rppi菜單條目::取消) {
+                Rppi菜單條目::分類 { key } => {
+                    if let Some(next) = 當前.children.get(key) {
+                        堆疊.push(當前);
+                        當前 = next;
+                    }
+                }
+                Rppi菜單條目::配方(recipe) => return Ok(Some(recipe.clone())),
+                Rppi菜單條目::返回 => {
+                    if let Some(prev) = 堆疊.pop() {
+                        當前 = prev;
+                    }
+                }
+                Rppi菜單條目::取消 => return Ok(None),
+            },
+        }
+    }
+}
+
+fn rppi配方列表(recipe: &Recipe) -> Vec<String> {
+    let mut 已見 = HashSet::new();
+    let mut 列表 = Vec::new();
+
+    let 主配方 = rppi配方串(recipe);
+    已見.insert(主配方.clone());
+    列表.push(主配方);
+
+    if let Some(deps) = &recipe.dependencies {
+        for d in deps {
+            if 已見.insert(d.clone()) {
+                列表.push(d.clone());
+            }
+        }
+    }
+    if let Some(rdeps) = &recipe.reverse_dependencies {
+        for d in rdeps {
+            if 已見.insert(d.clone()) {
+                列表.push(d.clone());
+            }
+        }
+    }
+
+    列表
+}
+
+fn rppi配方串(recipe: &Recipe) -> String {
+    let mut spec = recipe.repo.clone();
+    if let Some(branch) = &recipe.branch {
+        spec.push('@');
+        spec.push_str(branch);
+    }
+    spec
+}
+
+fn 執行tui命令(命令: 子命令, 描述: &str) -> anyhow::Result<String> {
+    match 執行命令(命令, true) {
+        Ok(()) => Ok(format!("{} {}", style("✓").green(), 描述)),
+        Err(err) => Ok(format!("{} {err}", style("✗").red())),
+    }
+}
+
+fn 讀取可取消(prompt: &str) -> anyhow::Result<Option<String>> {
+    let mut 取消主題 = ColorfulTheme::default();
+    取消主題.success_prefix = style("↩".to_string()).for_stderr().cyan();
+    let 輸入: String = Input::with_theme(&取消主題)
+        .with_prompt(prompt)
+        .allow_empty(true)
+        .interact_text()?;
+    let trimmed = 輸入.trim();
+    let normalized = trimmed.trim_start_matches(|c| c == '/' || c == ':');
+    if normalized.eq_ignore_ascii_case("cancel")
+        || trimmed.eq_ignore_ascii_case("c")
+        || trimmed.eq_ignore_ascii_case("q")
+        || normalized.eq_ignore_ascii_case("q")
+        || normalized.eq_ignore_ascii_case("c")
+        || normalized == "q"
+        || normalized == "取消"
+        || normalized == "退出"
+    {
+        Ok(None)
+    } else {
+        Ok(Some(輸入))
+    }
+}
+
+fn 非空或無(s: String) -> Option<String> {
+    let t = s.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
+}

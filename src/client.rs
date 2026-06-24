@@ -1,27 +1,27 @@
-use std::path::PathBuf;
-use std::sync::Mutex;
+use anyhow;
 #[cfg(windows)]
 use std::path::Path;
-use anyhow;
+use std::path::PathBuf;
+use std::sync::Mutex;
 
+use crate::rime_levers::*;
 #[cfg(windows)]
 use std::ffi::OsStr;
 #[cfg(windows)]
 use windows::Win32::System::SystemInformation::{
-    GetNativeSystemInfo, PROCESSOR_ARCHITECTURE, PROCESSOR_ARCHITECTURE_AMD64, PROCESSOR_ARCHITECTURE_ARM64, SYSTEM_INFO
+    GetNativeSystemInfo, PROCESSOR_ARCHITECTURE, PROCESSOR_ARCHITECTURE_AMD64,
+    PROCESSOR_ARCHITECTURE_ARM64, SYSTEM_INFO,
 };
 #[cfg(windows)]
 use windows_version::OsVersion;
 #[cfg(windows)]
 use winreg::RegKey;
-use crate::rime_levers::{*};
 
 #[cfg(windows)]
 pub fn 路徑相同(左: &Path, 右: &Path) -> bool {
     let 左標準 = 左.canonicalize().unwrap_or_else(|_| 左.to_path_buf());
     let 右標準 = 右.canonicalize().unwrap_or_else(|_| 右.to_path_buf());
-    左標準.to_string_lossy().to_ascii_lowercase()
-        == 右標準.to_string_lossy().to_ascii_lowercase()
+    左標準.to_string_lossy().to_ascii_lowercase() == 右標準.to_string_lossy().to_ascii_lowercase()
 }
 
 #[cfg(windows)]
@@ -34,10 +34,14 @@ fn 檢查架構(arch: PROCESSOR_ARCHITECTURE) -> bool {
 }
 
 #[cfg(windows)]
-fn 系統是amd64架構() -> bool { 檢查架構(PROCESSOR_ARCHITECTURE_AMD64) }
+fn 系統是amd64架構() -> bool {
+    檢查架構(PROCESSOR_ARCHITECTURE_AMD64)
+}
 
 #[cfg(windows)]
-fn 系統是arm64架構() -> bool { 檢查架構(PROCESSOR_ARCHITECTURE_ARM64) }
+fn 系統是arm64架構() -> bool {
+    檢查架構(PROCESSOR_ARCHITECTURE_ARM64)
+}
 
 #[cfg(windows)]
 fn 版本高於_win11() -> bool {
@@ -48,19 +52,28 @@ fn 版本高於_win11() -> bool {
 #[cfg(windows)]
 pub fn 獲取小狼毫架構模式() -> String {
     if 版本高於_win11() {
-        if 系統是arm64架構() || 系統是amd64架構() {"x64".to_string()}
-        else { "x86".to_string() }
+        if 系統是arm64架構() || 系統是amd64架構() {
+            "x64".to_string()
+        } else {
+            "x86".to_string()
+        }
     } else {
-        if 系統是amd64架構() {"x64".to_string()}
-        else { "x86".to_string() }
+        if 系統是amd64架構() {
+            "x64".to_string()
+        } else {
+            "x86".to_string()
+        }
     }
 }
 
 #[cfg(windows)]
 pub fn 獲取小狼毫程序目錄() -> Option<String> {
     let 註冊表路徑 = {
-        if 系統是arm64架構() || 系統是amd64架構() { OsStr::new("SOFTWARE\\WOW6432Node\\Rime\\Weasel") }
-        else { OsStr::new("SOFTWARE\\Rime\\Weasel") }
+        if 系統是arm64架構() || 系統是amd64架構() {
+            OsStr::new("SOFTWARE\\WOW6432Node\\Rime\\Weasel")
+        } else {
+            OsStr::new("SOFTWARE\\Rime\\Weasel")
+        }
     };
     RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE)
         .open_subkey(註冊表路徑)
@@ -78,7 +91,7 @@ pub fn 用戶目錄() -> Option<String> {
 }
 
 #[cfg(windows)]
-pub fn 共享數據目錄() ->Option<String> {
+pub fn 共享數據目錄() -> Option<String> {
     let 程序目錄 = 獲取小狼毫程序目錄()?;
     let mut 路徑 = PathBuf::from(程序目錄);
     路徑.push("data");
@@ -103,7 +116,6 @@ pub fn 卸載引擎庫() -> anyhow::Result<()> {
         rime::unload_librime!();
     }
     Ok(())
-
 }
 
 #[cfg(windows)]
@@ -114,7 +126,7 @@ pub fn 需要管理員權限(目錄: &str) -> anyhow::Result<bool> {
         Ok(_) => {
             std::fs::remove_file(&測試文件).ok();
             Ok(false)
-        },
+        }
         Err(_) => Ok(true),
     }
 }
@@ -124,7 +136,7 @@ pub fn 用戶目錄() -> Option<String> {
     if let Some(家目錄) = std::env::var_os("HOME") {
         let mut 路徑 = std::path::PathBuf::from(家目錄);
 
-        #[cfg(target_os = "macos")] 
+        #[cfg(target_os = "macos")]
         路徑.push("Library/Rime");
         #[cfg(not(target_os = "macos"))]
         路徑.push(".config/ibus/rime");
@@ -136,20 +148,24 @@ pub fn 用戶目錄() -> Option<String> {
 }
 
 pub fn 有效用戶目錄() -> anyhow::Result<String> {
-    OVERRIDE_USER_DIR.lock().unwrap().clone()
+    OVERRIDE_USER_DIR
+        .lock()
+        .unwrap()
+        .clone()
         .or_else(|| 用戶目錄().map(PathBuf::from))
         .map(|p| p.to_string_lossy().to_string())
         .ok_or_else(|| anyhow::anyhow!("無法獲取用戶目錄"))
 }
- 
+
 #[cfg(not(windows))]
 pub fn 默認用戶目錄() -> Option<String> {
     用戶目錄()
 }
 
 #[cfg(not(windows))]
-pub fn 共享數據目錄() ->Option<String> {
-    #[cfg(target_os = "macos")] {
+pub fn 共享數據目錄() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
         if let Some(目標路徑) = std::env::var_os("DSTROOT") {
             let mut 路徑 = std::path::PathBuf::from(目標路徑);
             路徑.push("Contents/SharedSupport");
@@ -158,7 +174,8 @@ pub fn 共享數據目錄() ->Option<String> {
             todo!("DSTROOT路徑異常")
         }
     }
-    #[cfg(not(target_os = "macos"))] {
+    #[cfg(not(target_os = "macos"))]
+    {
         Some("/usr/share/rime-data".to_string())
     }
 }
@@ -166,14 +183,13 @@ pub fn 共享數據目錄() ->Option<String> {
 pub fn 前端部署() -> anyhow::Result<()> {
     #[cfg(windows)]
     {
-        let 小狼毫目錄 = 獲取小狼毫程序目錄().ok_or_else(|| anyhow::anyhow!("無法獲取小狼毫程序目錄"))?;
+        let 小狼毫目錄 =
+            獲取小狼毫程序目錄().ok_or_else(|| anyhow::anyhow!("無法獲取小狼毫程序目錄"))?;
         let 服務 = PathBuf::from(小狼毫目錄).join("WeaselDeployer.exe");
         if !服務.exists() {
             return Err(anyhow::anyhow!("無法找到 WeaselDeployer.exe"));
         }
-        std::process::Command::new(服務)
-            .arg("/deploy")
-            .spawn()?;
+        std::process::Command::new(服務).arg("/deploy").spawn()?;
     }
     #[cfg(not(windows))]
     {
@@ -185,14 +201,22 @@ pub fn 前端部署() -> anyhow::Result<()> {
 
 pub fn 初始化引擎() -> anyhow::Result<()> {
     // 如果设置了覆盖值，则优先使用覆盖值
-    let 用戶數據目錄 = OVERRIDE_USER_DIR.lock().unwrap().clone()
+    let 用戶數據目錄 = OVERRIDE_USER_DIR
+        .lock()
+        .unwrap()
+        .clone()
         .or_else(|| 用戶目錄().map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from("."));
     let mut 參數 = 引擎啓動參數::新建(用戶數據目錄);
-    參數.共享數據場地 = OVERRIDE_SHARED_DIR.lock().unwrap().clone()
+    參數.共享數據場地 = OVERRIDE_SHARED_DIR
+        .lock()
+        .unwrap()
+        .clone()
         .or_else(|| 共享數據目錄().map(PathBuf::from));
     let 家目錄 = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
-    let 日誌目錄 = PathBuf::from(家目錄.unwrap()).join(".rime-cli").join("logs");
+    let 日誌目錄 = PathBuf::from(家目錄.unwrap())
+        .join(".rime-cli")
+        .join("logs");
     參數.日誌場地 = Some(日誌目錄);
     參數.應用名 = Some("rime-cli".to_string());
     crate::rime_levers::設置引擎啓動參數(&參數)?;
