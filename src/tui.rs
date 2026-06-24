@@ -78,7 +78,7 @@ fn 保存tui配置(配置: &Tui配置) -> anyhow::Result<()> {
 }
 
 pub fn 進入tui(上下文: 啓動上下文) -> anyhow::Result<()> {
-    let 主題 = ColorfulTheme::default();
+    let 主題 = tui主題();
     let 終端 = Term::stdout();
     let mut 配置 = 讀取tui配置()?;
     let mut proxy = 配置.proxy.clone();
@@ -92,9 +92,7 @@ pub fn 進入tui(上下文: 啓動上下文) -> anyhow::Result<()> {
     檢查默認設置自定義文件();
 
     'tui: loop {
-        if let Some(msg) = 狀態.take() {
-            println!("{msg}");
-        }
+        顯示主畫面(&終端, 狀態.take().as_deref())?;
         let 選項 = vec![
             "下載配方".to_string(),
             "安裝配方".to_string(),
@@ -109,37 +107,39 @@ pub fn 進入tui(上下文: 啓動上下文) -> anyhow::Result<()> {
             "退出".to_string(),
         ];
         let sel = Select::with_theme(&主題)
-            .with_prompt("選擇操作 (使用方向鍵(或者jk)移动選擇，回車或空格確認, q或Esc退出)")
+            .with_prompt("選擇操作")
             .items(&選項)
             .default(0)
             .interact_on_opt(&終端)?;
         let 應退出 = match sel {
             Some(0) => {
-                if let Some(msg) = 處理下載或安裝(
-                    &上下文,
-                    配方操作::Download,
-                    &主題,
-                    &終端,
-                    host.as_deref(),
-                    proxy.as_deref(),
-                    &mut rppi索引,
-                )? {
-                    狀態 = Some(msg);
-                }
+                設置流程狀態(
+                    &mut 狀態,
+                    處理下載或安裝(
+                        &上下文,
+                        配方操作::Download,
+                        &主題,
+                        &終端,
+                        host.as_deref(),
+                        proxy.as_deref(),
+                        &mut rppi索引,
+                    ),
+                );
                 false
             }
             Some(1) => {
-                if let Some(msg) = 處理下載或安裝(
-                    &上下文,
-                    配方操作::Install,
-                    &主題,
-                    &終端,
-                    host.as_deref(),
-                    proxy.as_deref(),
-                    &mut rppi索引,
-                )? {
-                    狀態 = Some(msg);
-                }
+                設置流程狀態(
+                    &mut 狀態,
+                    處理下載或安裝(
+                        &上下文,
+                        配方操作::Install,
+                        &主題,
+                        &終端,
+                        host.as_deref(),
+                        proxy.as_deref(),
+                        &mut rppi索引,
+                    ),
+                );
                 false
             }
             Some(2) => {
@@ -163,15 +163,21 @@ pub fn 進入tui(上下文: 啓動上下文) -> anyhow::Result<()> {
                     _ = Some(執行tui命令(&上下文, 子命令::Build, "build")?);
                     已部署 = true;
                 }
-                let 列表 = 方案列表(true)?;
+                let 列表 = match 方案列表(true) {
+                    Ok(列表) => 列表,
+                    Err(err) => {
+                        狀態 = Some(format!("{} {err}", style("✗").red()));
+                        continue 'tui;
+                    }
+                };
                 if 列表.is_empty() {
-                    println!("已選方案列表爲空");
+                    狀態 = Some("已選方案列表爲空".to_string());
                     continue 'tui;
                 }
 
                 let 選項 = 列表.iter().map(|s| s.as_str()).collect::<Vec<_>>();
                 let sel = Select::with_theme(&主題)
-                    .with_prompt("要選擇的輸入方案 (輸入q或Esc退出)")
+                    .with_prompt("要選擇的輸入方案")
                     .items(&選項)
                     .default(0)
                     .interact_on_opt(&終端)?;
@@ -199,15 +205,21 @@ pub fn 進入tui(上下文: 啓動上下文) -> anyhow::Result<()> {
                     _ = Some(執行tui命令(&上下文, 子命令::Build, "build")?);
                     已部署 = true;
                 }
-                let 列表 = 方案列表(false)?;
+                let 列表 = match 方案列表(false) {
+                    Ok(列表) => 列表,
+                    Err(err) => {
+                        狀態 = Some(format!("{} {err}", style("✗").red()));
+                        continue 'tui;
+                    }
+                };
                 if 列表.is_empty() {
-                    println!("可添加方案列表爲空");
+                    狀態 = Some("可添加方案列表爲空".to_string());
                     continue 'tui;
                 }
 
                 let 選項 = 列表.iter().map(|s| s.as_str()).collect::<Vec<_>>();
                 let sel = Select::with_theme(&主題)
-                    .with_prompt("要加入的輸入方案 (輸入q或Esc退出)")
+                    .with_prompt("要加入的輸入方案")
                     .items(&選項)
                     .default(0)
                     .interact_on_opt(&終端)?;
@@ -235,15 +247,21 @@ pub fn 進入tui(上下文: 啓動上下文) -> anyhow::Result<()> {
                     _ = Some(執行tui命令(&上下文, 子命令::Build, "build")?);
                     已部署 = true;
                 }
-                let 列表 = 方案列表(true)?;
+                let 列表 = match 方案列表(true) {
+                    Ok(列表) => 列表,
+                    Err(err) => {
+                        狀態 = Some(format!("{} {err}", style("✗").red()));
+                        continue 'tui;
+                    }
+                };
                 if 列表.is_empty() {
-                    println!("已選方案列表爲空");
+                    狀態 = Some("已選方案列表爲空".to_string());
                     continue 'tui;
                 }
 
                 let 選項 = 列表.iter().map(|s| s.as_str()).collect::<Vec<_>>();
                 let sel = Select::with_theme(&主題)
-                    .with_prompt("要刪除的輸入方案 (輸入q或Esc退出)")
+                    .with_prompt("要刪除的輸入方案")
                     .items(&選項)
                     .default(0)
                     .interact_on_opt(&終端)?;
@@ -330,6 +348,32 @@ pub fn 進入tui(上下文: 啓動上下文) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn tui主題() -> ColorfulTheme {
+    let mut 主題 = ColorfulTheme::default();
+    主題.success_prefix = style("".to_string()).for_stderr();
+    主題
+}
+
+fn 設置流程狀態(狀態: &mut Option<String>, 結果: anyhow::Result<Option<String>>) {
+    match 結果 {
+        Ok(Some(msg)) => *狀態 = Some(msg),
+        Ok(None) => {}
+        Err(err) => *狀態 = Some(format!("{} {err}", style("✗").red())),
+    }
+}
+
+fn 顯示主畫面(終端: &Term, 狀態: Option<&str>) -> anyhow::Result<()> {
+    終端.clear_screen()?;
+    println!("{}", style("rime-cli").bold());
+    println!("{}", style("q/Esc 退出  Enter 確認  ↑↓/jk 移動").dim());
+    if let Some(狀態) = 狀態 {
+        println!();
+        println!("{狀態}");
+    }
+    println!();
+    Ok(())
+}
+
 fn 處理下載或安裝(
     上下文: &啓動上下文,
     操作: 配方操作,
@@ -342,6 +386,7 @@ fn 處理下載或安裝(
     let Some(來源) = 選擇配方來源(主題, 終端)? else {
         return Ok(None);
     };
+    終端.clear_screen()?;
 
     match 來源 {
         配方選擇來源::手動 => {
@@ -359,11 +404,13 @@ fn 處理下載或安裝(
             if 配方.is_empty() {
                 return Ok(None);
             }
+            終端.clear_screen()?;
             Ok(Some(執行配方操作(上下文, 操作, 配方, host, proxy)?))
         }
         配方選擇來源::Rppi => {
             if let Some(配方列表) = 從rppi選擇配方(主題, 終端, host, proxy, rppi索引)?
             {
+                終端.clear_screen()?;
                 Ok(Some(執行配方操作(
                     上下文,
                     操作,
@@ -386,12 +433,14 @@ fn 執行配方操作(
     proxy: Option<&str>,
 ) -> anyhow::Result<String> {
     let mut 訊息 = Vec::new();
+    let 標題 = match 操作 {
+        配方操作::Download => "下載配方",
+        配方操作::Install => "安裝配方",
+    };
+    println!("{}", style(標題).bold());
+    println!();
     for p in 配方 {
-        let prompt = match 操作 {
-            配方操作::Download => format!("下載配方 {}", p),
-            配方操作::Install => format!("安裝配方 {}", p),
-        };
-        println!("{}", style(prompt).blue());
+        println!("{} {}", style(">").blue(), p);
 
         let 下載參數 = 下載參數::new(
             host.map(|h| h.to_string()),
@@ -427,7 +476,7 @@ fn 選擇配方來源(
         "返回".to_string(),
     ];
     let sel = Select::with_theme(主題)
-        .with_prompt("選擇配方來源 (使用方向鍵(或者jk)移动選擇，回車或空格確認, q或Esc退出)")
+        .with_prompt("選擇配方來源")
         .items(&選項)
         .default(0)
         .interact_on_opt(終端)?;

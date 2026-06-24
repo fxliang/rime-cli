@@ -410,7 +410,7 @@ pub fn 檢查默認設置自定義文件() {
         let 用戶場地 = 用戶場地.join("default.custom.yaml");
         if !用戶場地.exists() {
             match std::fs::File::create(&用戶場地) {
-                Ok(_) => println!("空文件已创建: {:?}", 用戶場地),
+                Ok(_) => log::debug!("空文件已创建: {:?}", 用戶場地),
                 Err(e) => eprintln!("創建文件{} 失敗: {}", 用戶場地.display(), e),
             }
         }
