@@ -50,7 +50,7 @@ pub fn 設置引擎啓動參數(參數: &引擎啓動參數) -> anyhow::Result<(
     c_strings.push(用戶數據場地〇);
 
     let 共享數據場地_idx = if let Some(ref 場地) = 參數.共享數據場地 {
-        std::fs::create_dir_all(場地)?;
+        // 共享數據目錄爲預置只讀資源，不執行創建
         let cstr = CString::new(場地.to_str().ok_or(anyhow!("路徑編碼轉換錯誤"))?)?;
         c_strings.push(cstr);
         Some(c_strings.len() - 1)
