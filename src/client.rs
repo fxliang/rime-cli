@@ -163,7 +163,17 @@ pub fn 共享數據目錄() -> Option<String> {
             todo!("DSTROOT路徑異常")
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "android")]
+    {
+        // Termux: 使用 $PREFIX/share/rime-data 而非 /usr/share/rime-data
+        std::env::var_os("PREFIX")
+            .map(|p| {
+                let mut 路徑 = std::path::PathBuf::from(p);
+                路徑.push("share/rime-data");
+                路徑.to_string_lossy().to_string()
+            })
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "android")))]
     {
         Some("/usr/share/rime-data".to_string())
     }
